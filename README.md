@@ -1,73 +1,23 @@
-# React + TypeScript + Vite
+# Modern Tabs Outliner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## A. Spec
+Modern Tabs Outliner is a tree-based browser session manager extension. It allows users to organize their tabs and windows into a hierarchical tree structure, enabling efficient management, saving, and restoring of browser sessions. Key features include:
+- Visualizing tabs and windows as a tree.
+- Closing and saving tabs/windows to free up memory while retaining them in the tree.
+- Restoring saved tabs/windows seamlessly.
+- Drag-and-drop reorganization of the session tree.
 
-Currently, two official plugins are available:
+## B. Architecture
+The technical design of this extension is divided into four main layers:
+1. **Background Service Worker**: Manages browser state, persistence, and coordinates events.
+2. **Popup UI**: The primary user interface for viewing and editing the session tree.
+3. **Storage Layer**: Persists the tree structure and settings using IndexedDB and `chrome.storage.local`.
+4. **Runtime Reconciliation**: Maps actual browser tabs and windows to internal tree node representations.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+For a comprehensive breakdown of the system diagram, data flow, message passing, and storage schema, please refer to the detailed architecture document:
+[Technical Architecture Document](tab-session-manager/architecture.md)
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## C. Tool and Environment
+- **Development Assistant**: Antigravity AI Assistant running on **Windows**.
+- **Package Management & Build Tooling**: Node.js and `npm` running inside a **WSL2** (Windows Subsystem for Linux) environment.
+- **Frameworks**: React, TypeScript, and Vite.
