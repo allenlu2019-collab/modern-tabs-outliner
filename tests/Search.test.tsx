@@ -16,6 +16,7 @@ const { mockNodes } = vi.hoisted(() => ({
 vi.mock('../src/storage', () => ({
   getAllNodes: vi.fn(() => Promise.resolve([...mockNodes])),
   removeNode: vi.fn().mockResolvedValue(undefined),
+  removeSubtree: vi.fn().mockResolvedValue(undefined),
   putNode: vi.fn().mockResolvedValue(undefined),
   putNodes: vi.fn().mockResolvedValue(undefined),
 }));

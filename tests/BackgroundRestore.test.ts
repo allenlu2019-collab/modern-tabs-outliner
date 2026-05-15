@@ -7,6 +7,8 @@ vi.mock('../src/storage', () => ({
   getAllNodes: vi.fn(),
   putNode: vi.fn(),
   putNodes: vi.fn(),
+  removeNode: vi.fn(),
+  removeSubtree: vi.fn(),
 }));
 
 describe('Background Restoration Logic', () => {

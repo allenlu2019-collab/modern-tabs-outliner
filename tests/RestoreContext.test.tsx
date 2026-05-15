@@ -33,6 +33,10 @@ describe('Restoration Context Preservation', () => {
   it('triggers RESTORE_NODE when a saved tab is clicked', async () => {
     render(<App />);
     
+    // Expand the window first
+    const winHeader = await screen.findByText(/Saved Project/);
+    fireEvent.click(winHeader);
+
     // Find the saved tab
     const tabNode = await screen.findByText('Target Tab');
     fireEvent.click(tabNode);
@@ -53,7 +57,7 @@ describe('Restoration Context Preservation', () => {
     expect(winTitle).toBeInTheDocument();
 
     // Verify presence of restore button (↻)
-    const restoreBtn = screen.getByTitle('Restore Window');
+    const restoreBtn = screen.getByTitle('Restore all in window');
     expect(restoreBtn).toBeInTheDocument();
 
     fireEvent.click(restoreBtn);

@@ -24,6 +24,7 @@ const chromeMock = {
       if (cb) cb(win);
       return Promise.resolve(win);
     }),
+  },
   action: {
     onClicked: {
       addListener: vi.fn(),

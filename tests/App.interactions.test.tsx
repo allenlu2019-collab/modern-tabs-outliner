@@ -50,6 +50,7 @@ vi.mock('../src/storage', () => ({
   }),
   putNode: vi.fn().mockResolvedValue(undefined),
   putNodes: vi.fn().mockResolvedValue(undefined),
+  removeSubtree: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('App React Component System Integration', () => {
@@ -109,10 +110,9 @@ describe('App React Component System Integration', () => {
     // Give some time for async cleanup logic
     await new Promise(resolve => setTimeout(resolve, 10));
 
-    // The storage removeNode should be called for BOTH the tab and the window
+    // The storage removeSubtree should be called for the tab
     const storageArr = await import('../src/storage');
-    expect(storageArr.removeNode).toHaveBeenCalledWith('tab-1');
-    expect(storageArr.removeNode).toHaveBeenCalledWith('win-1');
+    expect(storageArr.removeSubtree).toHaveBeenCalledWith('tab-1');
   });
 
   it('saves window and tabs when close window button is clicked', async () => {
@@ -122,8 +122,8 @@ describe('App React Component System Integration', () => {
     const windowTitle = await screen.findByText(/Main Window/);
     expect(windowTitle).toBeInTheDocument();
 
-    // Find the "Save & Close Window" button (⨯)
-    const closeBtn = screen.getByTitle('Save & Close Window');
+    // Find the "Close all in window" button (⨯)
+    const closeBtn = screen.getByTitle('Close all in window');
     fireEvent.click(closeBtn);
 
     // Verify that intentional save message was sent
@@ -141,10 +141,23 @@ describe('App React Component System Integration', () => {
     // Verify that windows.remove was called
     expect(chrome.windows.remove).toHaveBeenCalledWith(101);
 
-    // Verify that removeNode was NOT called for either
+    // Verify that removeSubtree was NOT called for either
     const storage = await import('../src/storage');
-    // Ensure removeNode wasn't called in THIS test run
-    // Note: vi.clearAllMocks() in beforeEach handles this
-    expect(storage.removeNode).not.toHaveBeenCalled();
+    expect(storage.removeSubtree).not.toHaveBeenCalled();
+  });
+
+  it('closes physical browser tabs when Remove is clicked on an open tab', async () => {
+    (global as any).chrome.tabs.remove.mockClear();
+    render(<App />);
+
+    const tabTitle = await screen.findByText('Hanging Test Tab');
+    expect(tabTitle).toBeInTheDocument();
+
+    const removeBtn = screen.getByTitle('Remove Node');
+    fireEvent.click(removeBtn);
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect((global as any).chrome.tabs.remove).toHaveBeenCalledWith(999);
   });
 });

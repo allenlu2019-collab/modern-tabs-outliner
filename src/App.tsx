@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   DndContext, 
   closestCenter, 
@@ -60,10 +60,14 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(node.title || '');
 
-  // Auto-expand during search
+  // Auto-expand during search or status changes
   useEffect(() => {
-    if (forceExpand) setCollapsed(false);
-  }, [forceExpand]);
+    if (forceExpand) {
+      setCollapsed(false);
+    } else if (node.type === 'window' || node.type === 'group') {
+      setCollapsed(node.status !== 'open');
+    }
+  }, [forceExpand, node.status, node.type]);
 
   const {
     attributes,
@@ -118,6 +122,24 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
   const removeNodeBtn = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
+      const allFlatNodes = await getAllNodes();
+      const nodeMap = new Map(allFlatNodes.map(n => [n.id, n]));
+      
+      const getAllTabs = (id: string): BaseNode[] => {
+        const n = nodeMap.get(id);
+        if (!n) return [];
+        if (n.type === 'tab') return [n];
+        return (n.childIds || []).flatMap(cid => getAllTabs(cid));
+      };
+
+      const tabsToClose = getAllTabs(node.id).filter(t => t.status === 'open');
+      
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        for (const t of tabsToClose) {
+          if (t.browserTabId) chrome.tabs.remove(t.browserTabId).catch(() => {});
+        }
+      }
+
       // Cascade: remove this node and all descendants from storage.
       await removeSubtree(node.id);
       window.dispatchEvent(new CustomEvent('REFRESH_TREE'));
@@ -438,7 +460,7 @@ function App() {
   };
 
 
-  const loadTree = async () => {
+  const loadTree = useCallback(async () => {
     try {
       const flatNodes = await getAllNodes();
       const nodeMap = new Map<string, TreeNode>();
@@ -478,7 +500,7 @@ function App() {
     } catch (e) {
       console.error("Failed to load tree", e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadTree();
@@ -664,7 +686,7 @@ function App() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        {isSearching && <button className="clear-search" onClick={() => setSearchQuery('')}>×</button>}
+        {isSearching && <button className="clear-search" title="Clear search" onClick={() => setSearchQuery('')}>×</button>}
         {isSearching && matchingTabs.length > 0 && (
           <button
             className="extract-btn"
