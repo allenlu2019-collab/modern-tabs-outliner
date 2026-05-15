@@ -126,6 +126,9 @@ describe('App React Component System Integration', () => {
     const closeBtn = screen.getByTitle('Close all in window');
     fireEvent.click(closeBtn);
 
+    // Give some time for async branch processing
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     // Verify that intentional save message was sent
     // We mock chrome.runtime.sendMessage in the test setup (or it should be mocked)
     // In this test file, chrome.runtime.sendMessage is usually available via global mock
@@ -138,8 +141,8 @@ describe('App React Component System Integration', () => {
       nodeId: 'tab-1'
     });
 
-    // Verify that windows.remove was called
-    expect(chrome.windows.remove).toHaveBeenCalledWith(101);
+    // Verify that tabs.remove was called
+    expect(chrome.tabs.remove).toHaveBeenCalledWith(999);
 
     // Verify that removeSubtree was NOT called for either
     const storage = await import('../src/storage');

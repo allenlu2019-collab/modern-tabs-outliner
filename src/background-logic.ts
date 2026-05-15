@@ -91,7 +91,7 @@ export async function handleMessage(msg: any) {
         }
         
         pauseReconcile = false;
-        safeReconcile();
+        requestReconcile();
         return;
       }
 
@@ -144,11 +144,11 @@ export async function handleMessage(msg: any) {
       node.updatedAt = Date.now();
       await putNode(node);
       pauseReconcile = false;
-      safeReconcile();
+      requestReconcile();
     } catch (err) {
       console.error(err);
       pauseReconcile = false;
-      safeReconcile();
+      requestReconcile();
     }
     return;
   }
@@ -160,7 +160,7 @@ export async function handleMessage(msg: any) {
          console.warn(`[Outliner] chrome.tabs.move: ${chrome.runtime.lastError.message}`);
        }
        pauseReconcile = false;
-       safeReconcile();
+       requestReconcile();
     });
     return;
   }
@@ -213,19 +213,19 @@ export function initializeBackground() {
     await reconcileTabs();
   });
 
-  chrome.tabs.onCreated.addListener(safeReconcile);
-  chrome.tabs.onRemoved.addListener(safeReconcile);
-  chrome.tabs.onUpdated.addListener(safeReconcile);
-  chrome.tabs.onActivated.addListener(safeReconcile);
-  chrome.tabs.onMoved.addListener(safeReconcile);
-  chrome.tabs.onAttached.addListener(safeReconcile);
-  chrome.tabs.onDetached.addListener(safeReconcile);
-  chrome.tabs.onReplaced.addListener(safeReconcile);
-  chrome.windows.onCreated.addListener(safeReconcile);
-  chrome.windows.onRemoved.addListener(safeReconcile);
-  chrome.windows.onFocusChanged.addListener(safeReconcile);
+  chrome.tabs.onCreated.addListener(requestReconcile);
+  chrome.tabs.onRemoved.addListener(requestReconcile);
+  chrome.tabs.onUpdated.addListener(requestReconcile);
+  chrome.tabs.onActivated.addListener(requestReconcile);
+  chrome.tabs.onMoved.addListener(requestReconcile);
+  chrome.tabs.onAttached.addListener(requestReconcile);
+  chrome.tabs.onDetached.addListener(requestReconcile);
+  chrome.tabs.onReplaced.addListener(requestReconcile);
+  chrome.windows.onCreated.addListener(requestReconcile);
+  chrome.windows.onRemoved.addListener(requestReconcile);
+  chrome.windows.onFocusChanged.addListener(requestReconcile);
 
-  safeReconcile();
+  requestReconcile();
 }
 
 function broadcastUpdate() {
@@ -333,9 +333,14 @@ async function reconcileTabs() {
         };
       } else {
         tabNode.status = "open";
-        tabNode.title = t.title || tabNode.title;
+        
+        const isLoadingPlaceholder = t.status === 'loading' && (!t.title || t.title === 'New Tab' || t.title === t.url);
+        if (!isLoadingPlaceholder) {
+            tabNode.title = t.title || tabNode.title;
+            tabNode.favIconUrl = t.favIconUrl || tabNode.favIconUrl;
+        }
+        
         tabNode.url = t.url || tabNode.url;
-        tabNode.favIconUrl = t.favIconUrl || tabNode.favIconUrl;
         tabNode.updatedAt = now;
         tabNode.active = t.active;
         tabNode.browserWindowId = w.id;
@@ -420,4 +425,12 @@ async function safeReconcile() {
       safeReconcile();
     }
   }
+}
+
+let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+function requestReconcile() {
+  if (reconcileTimer) clearTimeout(reconcileTimer);
+  reconcileTimer = setTimeout(() => {
+    safeReconcile();
+  }, 250);
 }
