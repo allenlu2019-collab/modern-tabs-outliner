@@ -233,12 +233,16 @@ function broadcastUpdate() {
 }
 
 async function reconcileTabs() {
-  const windows = await chrome.windows.getAll({ populate: true });
+  let windows = await chrome.windows.getAll({ populate: true });
+  if (windows.some(w => !w.tabs)) {
+      console.warn("[Outliner] Warning: chrome.windows.getAll returned windows without tabs. Skipping incomplete windows to prevent data loss.");
+      windows = windows.filter(w => w.tabs);
+  }
   const nodesToSave: BaseNode[] = [];
   const now = Date.now();
 
   const activeWindowIds = new Set(windows.map(w => w.id));
-  const activeTabIds = new Set(windows.flatMap(w => (w.tabs || []).map(t => t.id)));
+  const activeTabIds = new Set(windows.flatMap(w => w.tabs!.map(t => t.id)));
 
   const existingNodes = await getAllNodes();
   const nodeMap = new Map(existingNodes.map(n => [n.id, n]));
@@ -285,10 +289,9 @@ async function reconcileTabs() {
     if (w.id === outlinerWindowId) continue;
 
     let winNode = winByBrowserId.get(w.id);
-    const isNewWindow = !winNode;
     if (!winNode) {
       winNode = {
-        id: `win-${w.id}-${generateId()}`,
+        id: `win-${w.id}`,
         type: "window",
         parentId: "root",
         childIds: [],
@@ -357,17 +360,21 @@ async function reconcileTabs() {
     winNode.childIds = positionalWeave(winNode.childIds || [], tabsInThisWindow, nodesToRemove);
     nodesToSave.push(winNode);
 
-    // If this window was brand new, register it under root.childIds.
-    if (isNewWindow) {
-      const rootNode = nodeMap.get("root");
-      if (rootNode && !rootNode.childIds.includes(winNode.id)) {
-        rootNode.childIds.push(winNode.id);
-        nodesToSave.push(rootNode);
-      }
-    }
   }
 
-  if (!nodeMap.has("root")) {
+  const rootNode = nodeMap.get("root");
+  if (rootNode) {
+    const newChildIds = rootNode.childIds.filter(id => 
+      id.startsWith('win-') ? reconciledWindowIds.includes(id) : true
+    );
+    for (const wid of reconciledWindowIds) {
+      if (!newChildIds.includes(wid)) newChildIds.push(wid);
+    }
+    if (newChildIds.join(',') !== rootNode.childIds.join(',')) {
+      rootNode.childIds = newChildIds;
+      nodesToSave.push(rootNode);
+    }
+  } else {
     nodesToSave.push({
       id: "root",
       type: "workspace",
