@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getAllNodes, putNode, putNodes, removeNode, removeSubtree } from './storage';
+import { getAllNodes, putNode, putNodes, removeNode, removeSubtree, createSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot } from './storage';
 import type { BaseNode, TreeNode } from './types';
 import { generateId } from './utils';
 import './App.css';
@@ -25,6 +25,17 @@ import './App.css';
 
 
 // --- Components ---
+
+const timeAgo = (timestamp: number) => {
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const diff = Date.now() - timestamp;
+  const diffDays = Math.round(diff / (1000 * 60 * 60 * 24));
+  if (diffDays > 0) return rtf.format(-diffDays, 'day');
+  const diffHours = Math.round(diff / (1000 * 60 * 60));
+  if (diffHours > 0) return rtf.format(-diffHours, 'hour');
+  const diffMinutes = Math.round(diff / (1000 * 60));
+  return rtf.format(-diffMinutes, 'minute');
+};
 
 const TabIcon = ({ url, favIconUrl }: { url?: string; favIconUrl?: string }) => {
   const [error, setError] = useState(false);
@@ -313,6 +324,21 @@ function App() {
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSnapshots, setShowSnapshots] = useState(false);
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+
+  const loadSnapshots = async () => {
+    try {
+      const snaps = await getSnapshots();
+      setSnapshots(snaps);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showSnapshots) loadSnapshots();
+  }, [showSnapshots]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -717,8 +743,62 @@ function App() {
 
       <div className="session-root">
         <span className="root-icon">📁</span> {isSearching ? `Search Results (${allNodeIds.length})` : 'Current Session'}
-        <button className="btn-icon add-group-btn" onClick={addGroup} title="Add Group">📁+</button>
+        <button className="btn-icon add-group-btn" style={{marginRight: '8px', marginLeft: 'auto'}} onClick={() => setShowSnapshots(true)} title="Backup & Restore">💾</button>
+        <button className="btn-icon add-group-btn" style={{marginLeft: 0}} onClick={addGroup} title="Add Group">📁+</button>
       </div>
+
+      {showSnapshots && (
+        <div className="modal-overlay" onClick={() => setShowSnapshots(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>💾 Backup & Restore</h2>
+              <button className="close-btn" onClick={() => setShowSnapshots(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <button className="btn-primary full-width" onClick={async () => {
+                await createSnapshot();
+                loadSnapshots();
+              }}>Save Current State</button>
+              
+              <div className="snapshot-list">
+                {snapshots.length === 0 ? (
+                  <div className="empty-state">No backups found.</div>
+                ) : (
+                  snapshots.map(snap => (
+                    <div key={snap.id} className="snapshot-item">
+                      <div className="snapshot-info">
+                        <div className="snapshot-time">
+                          {new Date(snap.createdAt).toLocaleString()} 
+                          <span className="relative-time"> {timeAgo(snap.createdAt)}</span>
+                        </div>
+                        <div className="snapshot-count">{snap.nodeCount} items</div>
+                      </div>
+                      <div className="snapshot-actions">
+                        <button className="btn-restore" onClick={async () => {
+                          if (window.confirm("Restore this backup? Your current outliner structure will be entirely overwritten.")) {
+                            await restoreSnapshot(snap.id);
+                            setShowSnapshots(false);
+                            window.dispatchEvent(new CustomEvent('REFRESH_TREE'));
+                            if (typeof chrome !== 'undefined' && chrome.runtime) {
+                              chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" });
+                            }
+                          }
+                        }}>Restore</button>
+                        <button className="btn-delete" onClick={async () => {
+                          if (window.confirm("Delete this backup?")) {
+                            await deleteSnapshot(snap.id);
+                            loadSnapshots();
+                          }
+                        }}>🗑️</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <SortableContext items={allNodeIds} strategy={noopSortingStrategy}>

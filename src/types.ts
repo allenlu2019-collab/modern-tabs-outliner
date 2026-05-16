@@ -33,3 +33,10 @@ export interface BaseNode {
 export type TreeNode = BaseNode & {
   children: TreeNode[];
 };
+
+export interface Snapshot {
+  id: number;
+  createdAt: number;
+  nodeCount: number;
+  nodes: BaseNode[];
+}

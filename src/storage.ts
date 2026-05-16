@@ -1,8 +1,9 @@
-import type { BaseNode } from "./types";
+import type { BaseNode, Snapshot } from "./types";
 
 const DB_NAME = "tab-session-manager";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "nodes";
+const SNAPSHOT_STORE = "snapshots";
 
 // Cache the connection promise so we don't open a new IDB handle per call.
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -13,13 +14,16 @@ function getDB(): Promise<IDBDatabase> {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onerror = () => { dbPromise = null; reject(request.error); };
       request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
           store.createIndex("parentId", "parentId", { unique: false });
           store.createIndex("type", "type", { unique: false });
           store.createIndex("status", "status", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+          db.createObjectStore(SNAPSHOT_STORE, { keyPath: "id" });
         }
       };
     });
@@ -104,6 +108,78 @@ export async function clearAllNodes(): Promise<void> {
     const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).clear();
     tx.oncomplete = () => { dbPromise = null; resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// --- Snapshot Features ---
+
+export async function createSnapshot(): Promise<Snapshot> {
+  const nodes = await getAllNodes();
+  const db = await getDB();
+  const now = Date.now();
+  const snapshot: Snapshot = {
+    id: now,
+    createdAt: now,
+    nodeCount: nodes.length,
+    nodes
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
+    tx.objectStore(SNAPSHOT_STORE).put(snapshot);
+    tx.oncomplete = () => resolve(snapshot);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getSnapshots(): Promise<Omit<Snapshot, 'nodes'>[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SNAPSHOT_STORE, "readonly");
+    const request = tx.objectStore(SNAPSHOT_STORE).getAll();
+    request.onsuccess = () => {
+      // Map out the massive nodes array to keep UI memory footprint low
+      const metadata = request.result.map(snap => ({
+        id: snap.id,
+        createdAt: snap.createdAt,
+        nodeCount: snap.nodeCount
+      }));
+      resolve(metadata.sort((a, b) => b.createdAt - a.createdAt));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function restoreSnapshot(id: number): Promise<void> {
+  const db = await getDB();
+  const snapshot: Snapshot = await new Promise((resolve, reject) => {
+    const tx = db.transaction(SNAPSHOT_STORE, "readonly");
+    const request = tx.objectStore(SNAPSHOT_STORE).get(id);
+    request.onsuccess = () => {
+      if (request.result) resolve(request.result);
+      else reject(new Error("Snapshot not found"));
+    };
+    request.onerror = () => reject(tx.error);
+  });
+
+  // Clear existing nodes and put the snapshot nodes
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  await putNodes(snapshot.nodes);
+}
+
+export async function deleteSnapshot(id: number): Promise<void> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
+    tx.objectStore(SNAPSHOT_STORE).delete(id);
+    tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }

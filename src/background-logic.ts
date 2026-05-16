@@ -164,6 +164,11 @@ export async function handleMessage(msg: any) {
     });
     return;
   }
+
+  if (msg.type === "FORCE_RECONCILE") {
+    requestReconcile();
+    return;
+  }
 }
 
 export function initializeBackground() {

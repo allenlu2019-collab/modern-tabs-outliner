@@ -351,3 +351,152 @@ body {
   opacity: 0.85;
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal-content {
+  background: var(--bg-color);
+  border: 1px solid var(--item-border);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--item-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-color);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.close-btn:hover {
+  opacity: 1;
+}
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.btn-primary.full-width {
+  width: 100%;
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-primary.full-width:hover {
+  opacity: 0.9;
+}
+
+.snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snapshot-item {
+  background: var(--item-bg);
+  border: 1px solid var(--item-border);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.snapshot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.snapshot-time {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.relative-time {
+  font-size: 11px;
+  font-weight: normal;
+  opacity: 0.7;
+}
+
+.snapshot-count {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.snapshot-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-restore {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-delete {
+  background: none;
+  border: 1px solid var(--item-border);
+  color: var(--text-color);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-restore:hover, .btn-delete:hover {
+  opacity: 0.8;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  opacity: 0.5;
+}

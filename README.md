@@ -7,6 +7,16 @@ Modern Tabs Outliner is a tree-based browser session manager extension. It allow
 - Restoring saved tabs/windows seamlessly.
 - Drag-and-drop reorganization of the session tree.
 
+### UX Details & Advanced Features
+
+#### Single Click Editing
+To streamline organization, the outliner features an intuitive "Single Click Editing" UI. Simply click on the title of any Window or Group to instantly transform it into an editable text field. Hit `Enter` to save, or `Escape` to cancel. This completely removes the friction of right-click context menus.
+
+#### Snapshot Backup & Restore
+For peace of mind and strict session management, the outliner includes a Snapshot Backup system.
+- **Save**: Click the "💾 Backup & Restore" button to capture an instant, point-in-time snapshot of your entire tree hierarchy (including custom names, groups, and all open/saved tabs).
+- **Restore**: Easily view past snapshots, complete with a relative time indicator (e.g., `(2 hours ago)`). Restoring a backup safely overwrites the outliner state and instantly commands the background reconciler to sync your physical browser tabs against the retrieved snapshot.
+
 ## B. Architecture
 The technical design of this extension is divided into four main layers:
 1. **Background Service Worker**: Manages browser state, persistence, and coordinates events.
