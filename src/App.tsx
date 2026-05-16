@@ -210,7 +210,11 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
 
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editTitle.trim() === '') return;
+    if (editTitle.trim() === '' || editTitle === node.title) {
+      setIsEditing(false);
+      setEditTitle(node.title || '');
+      return;
+    }
     try {
       const updatedNode = { ...node, title: editTitle, updatedAt: Date.now() };
       delete (updatedNode as any).children;
@@ -236,12 +240,25 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 onBlur={handleRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setIsEditing(false);
+                    setEditTitle(node.title || '');
+                  }
+                }}
+                style={{ background: 'transparent', color: 'inherit', border: '1px solid #555', borderRadius: '4px', padding: '2px 4px', fontSize: 'inherit', outline: 'none' }}
               />
             </form>
           ) : (
             <span
               className="group-title"
-              onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setEditTitle(node.title || '');
+                setIsEditing(true); 
+              }}
+              title="Click to rename"
             >
               {node.title} {node.status && node.status !== 'open' && <span className="status-badge">[{node.status}]</span>}
               {collapsed && node.children && <span className="child-count">({node.children.length})</span>}

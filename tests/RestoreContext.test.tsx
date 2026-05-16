@@ -35,7 +35,8 @@ describe('Restoration Context Preservation', () => {
     
     // Expand the window first
     const winHeader = await screen.findByText(/Saved Project/);
-    fireEvent.click(winHeader);
+    // Click the parent element (.group-header) to toggle collapse, not the span which now triggers rename
+    fireEvent.click(winHeader.parentElement!);
 
     // Find the saved tab
     const tabNode = await screen.findByText('Target Tab');
