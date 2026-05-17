@@ -255,6 +255,81 @@ async function reconcileTabs() {
   const winByBrowserId = new Map(existingNodes.filter(n => n.type === 'window' && n.browserWindowId).map(n => [n.browserWindowId, n]));
   const tabByBrowserId = new Map(existingNodes.filter(n => n.type === 'tab' && n.browserTabId).map(n => [n.browserTabId, n]));
 
+  // --- PASS 2: Heuristic Fallback Matching (for Chrome Restarts / Snapshot Restores) ---
+  const fallbackDbWindows = existingNodes.filter(n => n.type === 'window' && (!n.browserWindowId || !activeWindowIds.has(n.browserWindowId)));
+  const fallbackDbTabs = existingNodes.filter(n => n.type === 'tab' && (!n.browserTabId || !activeTabIds.has(n.browserTabId)));
+
+  const isDescendant = (node: BaseNode, ancestorId: string): boolean => {
+      let curr: BaseNode | undefined = node;
+      while (curr) {
+          if (curr.id === ancestorId) return true;
+          curr = curr.parentId ? nodeMap.get(curr.parentId) : undefined;
+      }
+      return false;
+  };
+
+  for (const w of windows) {
+      if (w.id === outlinerWindowId) continue;
+      
+      let winNode = winByBrowserId.get(w.id);
+      if (!winNode) {
+          // Heuristic Window Match
+          let bestMatchWin: BaseNode | undefined;
+          let maxScore = 0;
+          for (const fWin of fallbackDbWindows) {
+              const getWinTabs = (nodeId: string): BaseNode[] => {
+                  const n = nodeMap.get(nodeId);
+                  if (!n) return [];
+                  if (n.type === 'tab') return [n];
+                  return (n.childIds || []).flatMap(getWinTabs);
+              };
+              const fWinTabs = getWinTabs(fWin.id);
+              const fWinUrls = new Set(fWinTabs.map(t => t.url).filter(u => u && u !== 'about:blank' && !u.startsWith('chrome://newtab')));
+              
+              let score = 0;
+              for (const t of (w.tabs || [])) {
+                  if (t.url && fWinUrls.has(t.url)) score++;
+              }
+              if (score > maxScore) {
+                  maxScore = score;
+                  bestMatchWin = fWin;
+              }
+          }
+          
+          const validUrlsCount = (w.tabs || []).filter(t => t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://newtab')).length;
+          if (bestMatchWin && maxScore > 0 && (maxScore >= 2 || maxScore === validUrlsCount)) {
+              winNode = bestMatchWin;
+              winNode.browserWindowId = w.id; // Link it
+              winByBrowserId.set(w.id, winNode);
+              fallbackDbWindows.splice(fallbackDbWindows.indexOf(bestMatchWin), 1);
+          }
+      }
+
+      for (const t of (w.tabs || [])) {
+          let tabNode = tabByBrowserId.get(t.id);
+          if (!tabNode) {
+              const validUrl = t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://newtab');
+              if (validUrl) {
+                  let matchIdx = -1;
+                  if (winNode) {
+                     matchIdx = fallbackDbTabs.findIndex(n => n.url === t.url && n.status === 'open' && isDescendant(n, winNode.id));
+                     if (matchIdx === -1) matchIdx = fallbackDbTabs.findIndex(n => n.url === t.url && isDescendant(n, winNode.id));
+                  }
+                  if (matchIdx === -1) matchIdx = fallbackDbTabs.findIndex(n => n.url === t.url && n.status === 'open');
+                  if (matchIdx === -1) matchIdx = fallbackDbTabs.findIndex(n => n.url === t.url);
+                  
+                  if (matchIdx !== -1) {
+                      tabNode = fallbackDbTabs[matchIdx];
+                      tabNode.browserTabId = t.id; // Link it
+                      tabByBrowserId.set(t.id, tabNode);
+                      fallbackDbTabs.splice(matchIdx, 1);
+                  }
+              }
+          }
+      }
+  }
+  // --- END PASS 2 ---
+
   const nodesToRemove = new Set<string>();
   
   for (const node of existingNodes) {
