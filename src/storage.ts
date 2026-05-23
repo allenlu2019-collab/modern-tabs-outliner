@@ -183,3 +183,24 @@ export async function deleteSnapshot(id: number): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+export async function importNodes(nodes: BaseNode[]): Promise<void> {
+  // 1. Create a safety backup snapshot of the current state before overwriting
+  try {
+    await createSnapshot();
+  } catch (err) {
+    console.warn("Failed to create pre-import backup snapshot:", err);
+  }
+
+  // 2. Clear existing store and put the new nodes
+  const db = await getDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  await putNodes(nodes);
+}

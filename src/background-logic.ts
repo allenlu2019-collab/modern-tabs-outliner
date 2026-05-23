@@ -173,9 +173,8 @@ export async function handleMessage(msg: any) {
 
 export function initializeBackground() {
   chrome.runtime.onMessage.addListener((msg) => {
-    // Return true to keep the message channel open for the async handler.
     handleMessage(msg);
-    return true;
+    // Don't return true — handleMessage is fire-and-forget, no response needed.
   });
 
   chrome.action.onClicked.addListener(async () => {
@@ -449,9 +448,7 @@ async function reconcileTabs() {
 
   const rootNode = nodeMap.get("root");
   if (rootNode) {
-    const newChildIds = rootNode.childIds.filter(id => 
-      id.startsWith('win-') ? reconciledWindowIds.includes(id) : true
-    );
+    const newChildIds = rootNode.childIds.filter(id => !nodesToRemove.has(id));
     for (const wid of reconciledWindowIds) {
       if (!newChildIds.includes(wid)) newChildIds.push(wid);
     }
@@ -472,6 +469,81 @@ async function reconcileTabs() {
   }
 
   const uniqueNodesToSave = new Map(nodesToSave.map(n => [n.id, n]));
+
+  // --- DATABASE INTEGRITY CLEANUP ---
+  const finalNodeIds = new Set<string>();
+  nodeMap.forEach((_node, id) => {
+    if (!nodesToRemove.has(id)) finalNodeIds.add(id);
+  });
+  uniqueNodesToSave.forEach((node) => {
+    if (!nodesToRemove.has(node.id)) finalNodeIds.add(node.id);
+  });
+
+  const allWorkingNodes = new Map<string, BaseNode>();
+  nodeMap.forEach((node, id) => {
+    if (!nodesToRemove.has(id)) allWorkingNodes.set(id, { ...node });
+  });
+  uniqueNodesToSave.forEach((node) => {
+    if (!nodesToRemove.has(node.id)) allWorkingNodes.set(node.id, node);
+  });
+
+  // Ensure root exists in working nodes
+  if (!allWorkingNodes.has("root")) {
+    allWorkingNodes.set("root", {
+      id: "root",
+      type: "workspace",
+      parentId: null,
+      childIds: [],
+      createdAt: now,
+      updatedAt: now,
+      sortOrder: 0
+    });
+    finalNodeIds.add("root");
+    uniqueNodesToSave.set("root", allWorkingNodes.get("root")!);
+  }
+
+  // Pass 1: Child-to-Parent Alignment (Validate parentId and ensure parent lists the child)
+  allWorkingNodes.forEach((node) => {
+    if (node.id === "root") return;
+
+    // Check if parent exists
+    const hasParent = node.parentId && finalNodeIds.has(node.parentId);
+    if (!hasParent) {
+      node.parentId = "root";
+      node.updatedAt = now;
+      uniqueNodesToSave.set(node.id, node);
+    }
+
+    // Ensure parent's childIds contains this node
+    const parentNode = allWorkingNodes.get(node.parentId!);
+    if (parentNode) {
+      if (!parentNode.childIds.includes(node.id)) {
+        parentNode.childIds.push(node.id);
+        parentNode.updatedAt = now;
+        uniqueNodesToSave.set(parentNode.id, parentNode);
+      }
+    }
+  });
+
+  // Pass 2: Parent-to-Child Clean up (Filter child lists based on existence and correct parentId)
+  allWorkingNodes.forEach((node) => {
+    if (node.childIds && node.childIds.length > 0) {
+      const originalCount = node.childIds.length;
+      
+      const cleanChildIds = node.childIds.filter((cid) => {
+        const child = allWorkingNodes.get(cid);
+        // Only keep if the child exists and points back to this parent node
+        return child && child.parentId === node.id;
+      });
+
+      if (cleanChildIds.length !== originalCount) {
+        node.childIds = cleanChildIds;
+        node.updatedAt = now;
+        uniqueNodesToSave.set(node.id, node);
+      }
+    }
+  });
+
   if (uniqueNodesToSave.size > 0) {
      await putNodes(Array.from(uniqueNodesToSave.values()));
   }

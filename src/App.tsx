@@ -16,9 +16,11 @@ import {
 } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getAllNodes, putNode, putNodes, removeNode, removeSubtree, createSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot } from './storage';
+import { getAllNodes, putNode, putNodes, removeNode, removeSubtree, createSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot, importNodes } from './storage';
 import type { BaseNode, TreeNode } from './types';
 import { generateId } from './utils';
+import { pushToGitHub, pullFromGitHub } from './githubService';
+import { validateBackupData } from './importValidation';
 import './App.css';
 
 // TreeNode is imported from types.ts — children is always populated during loadTree.
@@ -122,7 +124,7 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
     e.stopPropagation();
     try {
       if (typeof chrome !== 'undefined' && chrome.tabs && node.browserTabId) {
-        chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: node.id });
+        chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: node.id }).catch(() => {});
         chrome.tabs.remove(node.browserTabId);
       }
     } catch (err) {
@@ -180,11 +182,11 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
         for (const t of tabsToClose) {
            if (t.browserTabId) {
              // Pre-register as intentional saves so reconciler preserves them.
-             chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: t.id });
+             chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: t.id }).catch(() => {});
            }
         }
         if (node.type === 'window') {
-          chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: node.id });
+          chrome.runtime.sendMessage({ type: "INTENTIONAL_SAVE", nodeId: node.id }).catch(() => {});
         }
         // Close actual browser tabs — background onRemoved will trigger reconcile + TREE_UPDATED.
         for (const t of tabsToClose) {
@@ -326,6 +328,169 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [gitToken, setGitToken] = useState('');
+  const [gitRepo, setGitRepo] = useState('');
+  const [gitPath, setGitPath] = useState('tabs.json');
+  const [showGitSettings, setShowGitSettings] = useState(false);
+  const [gitStatusMsg, setGitStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isGitLoading, setIsGitLoading] = useState(false);
+
+  // Load GitHub Sync settings on mount
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['gitToken', 'gitRepo', 'gitPath'], (res) => {
+        if (res.gitToken) setGitToken(res.gitToken);
+        if (res.gitRepo) setGitRepo(res.gitRepo);
+        if (res.gitPath) setGitPath(res.gitPath || 'tabs.json');
+      });
+    } else {
+      const token = localStorage.getItem('gitToken') || '';
+      const repo = localStorage.getItem('gitRepo') || '';
+      const path = localStorage.getItem('gitPath') || 'tabs.json';
+      setGitToken(token);
+      setGitRepo(repo);
+      setGitPath(path);
+    }
+  }, []);
+
+  const saveGitSettings = (token: string, repo: string, path: string) => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ gitToken: token, gitRepo: repo, gitPath: path });
+    } else {
+      localStorage.setItem('gitToken', token);
+      localStorage.setItem('gitRepo', repo);
+      localStorage.setItem('gitPath', path);
+    }
+  };
+
+  const handleExportLocal = async () => {
+    try {
+      const nodes = await getAllNodes();
+      const backupData = {
+        version: 1,
+        exportedAt: Date.now(),
+        nodeCount: nodes.length,
+        nodes
+      };
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.download = `modern-outliner-backup-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(`Export failed: ${err.message || err}`);
+    }
+  };
+
+  const handleImportLocal = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        
+        const validation = validateBackupData(parsed);
+        if (!validation.isValid) {
+          alert(`Invalid backup file structure:\n${validation.errors.join('\n')}`);
+          return;
+        }
+
+        if (window.confirm(`Are you sure you want to restore these ${validation.nodes?.length} items? Your current tabs will be overwritten (a safety snapshot will be auto-created first).`)) {
+          await importNodes(validation.nodes!);
+          loadSnapshots();
+          loadTree();
+          
+          if (typeof chrome !== 'undefined' && chrome.runtime) {
+            chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" }).catch(() => {});
+          }
+          alert("Backup restored successfully!");
+        }
+      } catch (err: any) {
+        alert(`Failed to parse file: ${err.message || err}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handlePushGitHub = async () => {
+    if (!gitToken || !gitRepo || !gitPath) {
+      setGitStatusMsg({ text: "Please fill in all GitHub settings first.", isError: true });
+      return;
+    }
+    
+    setIsGitLoading(true);
+    setGitStatusMsg(null);
+    try {
+      const nodes = await getAllNodes();
+      const backupData = {
+        version: 1,
+        exportedAt: Date.now(),
+        nodeCount: nodes.length,
+        nodes
+      };
+      
+      await pushToGitHub(
+        { token: gitToken, repo: gitRepo, path: gitPath },
+        backupData
+      );
+      setGitStatusMsg({ text: "Successfully backed up to GitHub!", isError: false });
+    } catch (err: any) {
+      setGitStatusMsg({ text: err.message || "Failed to push to GitHub.", isError: true });
+    } finally {
+      setIsGitLoading(false);
+    }
+  };
+
+  const handlePullGitHub = async () => {
+    if (!gitToken || !gitRepo || !gitPath) {
+      setGitStatusMsg({ text: "Please fill in all GitHub settings first.", isError: true });
+      return;
+    }
+
+    setIsGitLoading(true);
+    setGitStatusMsg(null);
+    try {
+      const backupData = await pullFromGitHub({ token: gitToken, repo: gitRepo, path: gitPath });
+      
+      const validation = validateBackupData(backupData);
+      if (!validation.isValid) {
+        setGitStatusMsg({ 
+          text: `Invalid file format on GitHub:\n${validation.errors.join(', ')}`, 
+          isError: true 
+        });
+        setIsGitLoading(false);
+        return;
+      }
+
+      setIsGitLoading(false);
+      if (window.confirm(`Found ${validation.nodes?.length} items in GitHub. Restore now? Current tabs will be overwritten (a safety snapshot will be auto-created first).`)) {
+        setIsGitLoading(true);
+        await importNodes(validation.nodes!);
+        loadSnapshots();
+        loadTree();
+        
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" }).catch(() => {});
+        }
+        setGitStatusMsg({ text: "Successfully pulled and restored from GitHub!", isError: false });
+      }
+    } catch (err: any) {
+      setGitStatusMsg({ text: err.message || "Failed to pull from GitHub.", isError: true });
+    } finally {
+      setIsGitLoading(false);
+    }
+  };
 
   const loadSnapshots = async () => {
     try {
@@ -691,7 +856,7 @@ function App() {
                   tabId: movingTab.browserTabId, 
                   windowId: effectiveWindowId, 
                   index: physicalIndex 
-                });
+                }).catch(() => {});
               }
             }
           }
@@ -759,6 +924,104 @@ function App() {
                 await createSnapshot();
                 loadSnapshots();
               }}>Save Current State</button>
+
+              <div className="backup-section-title">Local File Sync</div>
+              <div className="file-sync-buttons">
+                <button className="btn-secondary" onClick={handleExportLocal}>
+                  📤 Export JSON
+                </button>
+                <label className="btn-secondary" style={{ margin: 0, textAlign: 'center' }}>
+                  📥 Import JSON
+                  <input 
+                    type="file" 
+                    accept=".json" 
+                    style={{ display: 'none' }} 
+                    onChange={handleImportLocal} 
+                  />
+                </label>
+              </div>
+
+              <div className="github-sync-container">
+                <div 
+                  className="github-settings-toggle" 
+                  onClick={() => {
+                    setShowGitSettings(!showGitSettings);
+                    setGitStatusMsg(null);
+                  }}
+                >
+                  <span>☁️ GitHub Cloud Sync</span>
+                  <span>{showGitSettings ? '▲' : '▼'}</span>
+                </div>
+
+                {showGitSettings && (
+                  <div className="github-settings-fields">
+                    <div className="github-input-group">
+                      <label>Personal Access Token (PAT)</label>
+                      <input 
+                        type="password" 
+                        className="github-input" 
+                        placeholder="ghp_..." 
+                        value={gitToken} 
+                        onChange={(e) => {
+                          setGitToken(e.target.value);
+                          saveGitSettings(e.target.value, gitRepo, gitPath);
+                        }}
+                      />
+                    </div>
+                    <div className="github-input-group">
+                      <label>GitHub Repository</label>
+                      <input 
+                        type="text" 
+                        className="github-input" 
+                        placeholder="owner/repo" 
+                        value={gitRepo} 
+                        onChange={(e) => {
+                          setGitRepo(e.target.value);
+                          saveGitSettings(gitToken, e.target.value, gitPath);
+                        }}
+                      />
+                    </div>
+                    <div className="github-input-group">
+                      <label>File Path in Repo</label>
+                      <input 
+                        type="text" 
+                        className="github-input" 
+                        placeholder="tabs.json" 
+                        value={gitPath} 
+                        onChange={(e) => {
+                          setGitPath(e.target.value);
+                          saveGitSettings(gitToken, gitRepo, e.target.value);
+                        }}
+                      />
+                    </div>
+
+                    <div className="github-action-buttons">
+                      <button 
+                        className="btn-github" 
+                        disabled={isGitLoading} 
+                        onClick={handlePushGitHub}
+                      >
+                        {isGitLoading ? <div className="spinner" /> : '📤 Push'}
+                      </button>
+                      <button 
+                        className="btn-github pull" 
+                        disabled={isGitLoading} 
+                        onClick={handlePullGitHub}
+                      >
+                        {isGitLoading ? <div className="spinner" /> : '📥 Pull'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {gitStatusMsg && (
+                  <div className={`github-status ${gitStatusMsg.isError ? 'error' : 'success'}`}>
+                    {gitStatusMsg.text}
+                  </div>
+                )}
+              </div>
+
+              <div className="backup-section-title">Local Snapshots</div>
               
               <div className="snapshot-list">
                 {snapshots.length === 0 ? (
@@ -780,7 +1043,7 @@ function App() {
                             setShowSnapshots(false);
                             window.dispatchEvent(new CustomEvent('REFRESH_TREE'));
                             if (typeof chrome !== 'undefined' && chrome.runtime) {
-                              chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" });
+                              chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" }).catch(() => {});
                             }
                           }
                         }}>Restore</button>
