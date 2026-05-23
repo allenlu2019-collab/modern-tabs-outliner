@@ -135,5 +135,32 @@ describe('Import & Export Validation', () => {
     const win2Node = cleanedNodes.find(n => n.id === 'win-2')!;
     expect(win2Node.childIds).toEqual(['tab-2']);
   });
+
+  it('should successfully round-trip database nodes through JSON export and import validation', () => {
+    const originalNodes: BaseNode[] = [
+      { id: 'root', type: 'workspace', parentId: null, childIds: ['win-1', 'group-1'], createdAt: 100, updatedAt: 100, sortOrder: 0 },
+      { id: 'win-1', type: 'window', parentId: 'root', childIds: ['tab-1'], createdAt: 101, updatedAt: 101, sortOrder: 0, status: 'open' },
+      { id: 'tab-1', type: 'tab', parentId: 'win-1', childIds: [], createdAt: 102, updatedAt: 102, sortOrder: 0, url: 'https://test.com', status: 'open' },
+      { id: 'group-1', type: 'group', parentId: 'root', childIds: ['tab-2'], createdAt: 103, updatedAt: 103, sortOrder: 1, title: 'My Group' },
+      { id: 'tab-2', type: 'tab', parentId: 'group-1', childIds: [], createdAt: 104, updatedAt: 104, sortOrder: 0, url: 'https://group.com', status: 'saved' }
+    ];
+
+    // 1. Simulate Export (convert to JSON wrapper format)
+    const backupWrapper = {
+      version: 1,
+      exportedAt: Date.now(),
+      nodeCount: originalNodes.length,
+      nodes: originalNodes
+    };
+    const jsonString = JSON.stringify(backupWrapper);
+
+    // 2. Simulate Import (parse and validate)
+    const parsedData = JSON.parse(jsonString);
+    const validation = validateBackupData(parsedData);
+
+    expect(validation.isValid).toBe(true);
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.nodes).toEqual(originalNodes);
+  });
 });
 
