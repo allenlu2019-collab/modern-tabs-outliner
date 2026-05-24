@@ -164,6 +164,7 @@ describe('Import & Export Validation', () => {
   });
 
   it('should sanitize nodes on import by converting status to saved and clearing browser IDs', async () => {
+    vi.resetModules();
     const mockPut = vi.fn();
     const mockClear = vi.fn();
     
@@ -239,6 +240,96 @@ describe('Import & Export Validation', () => {
     expect(tabNode.browserTabId).toBeUndefined();
     expect(tabNode.browserWindowId).toBeUndefined();
     expect(tabNode.active).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should successfully validate and sanitize the real-world backup JSON file', async () => {
+    vi.resetModules();
+    const fs = await import('fs');
+    const path = await import('path');
+    
+    const filePath = path.resolve(__dirname, 'backup-test-data.json');
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const backupData = JSON.parse(fileContent);
+
+    // 1. Validate the backup data structure
+    const validation = validateBackupData(backupData);
+    expect(validation.isValid).toBe(true);
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.nodes).toBeDefined();
+
+    // 2. Mock and execute importNodes to test the sanitization
+    const mockPut = vi.fn();
+    const mockClear = vi.fn();
+    
+    const mockStore = {
+      put: mockPut,
+      clear: mockClear,
+      getAll: () => {
+        const req = {
+          onsuccess: null as any,
+          result: []
+        };
+        setTimeout(() => {
+          if (req.onsuccess) req.onsuccess();
+        }, 0);
+        return req;
+      }
+    };
+
+    const mockDb = {
+      transaction: () => {
+        const tx = {
+          objectStore: () => mockStore,
+          oncomplete: null as any,
+          onerror: null as any
+        };
+        setTimeout(() => {
+          if (tx.oncomplete) tx.oncomplete();
+        }, 0);
+        return tx;
+      }
+    };
+
+    const mockOpenRequest = {
+      onsuccess: null as any,
+      onerror: null as any,
+      onupgradeneeded: null as any,
+      result: mockDb
+    };
+
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        setTimeout(() => {
+          if (mockOpenRequest.onsuccess) mockOpenRequest.onsuccess();
+        }, 0);
+        return mockOpenRequest;
+      }
+    });
+
+    const { importNodes } = await import('../src/storage');
+    await importNodes(validation.nodes!);
+
+    // Verify database was cleared
+    expect(mockClear).toHaveBeenCalled();
+
+    // Verify all nodes passed to put have been sanitized
+    const savedNodes = mockPut.mock.calls.map(call => call[0]);
+
+    // Check that we have the youtube window (which was open) and now it is saved and has no browser window ID
+    const youtubeNode = savedNodes.find(n => n.type === 'window' && n.title === 'youtube');
+    expect(youtubeNode).toBeDefined();
+    expect(youtubeNode.status).toBe('saved');
+    expect(youtubeNode.browserWindowId).toBeUndefined();
+
+    // Check that we have a tab node that was open (e.g. Astro-Han/karpathy-llm-wiki) and now it is saved and has no browser tab/window ID
+    const karpathyTab = savedNodes.find(n => n.type === 'tab' && n.url === 'https://github.com/Astro-Han/karpathy-llm-wiki');
+    expect(karpathyTab).toBeDefined();
+    expect(karpathyTab.status).toBe('saved');
+    expect(karpathyTab.browserTabId).toBeUndefined();
+    expect(karpathyTab.browserWindowId).toBeUndefined();
+    expect(karpathyTab.active).toBe(false);
 
     vi.unstubAllGlobals();
   });

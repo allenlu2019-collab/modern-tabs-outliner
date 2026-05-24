@@ -33,12 +33,11 @@ Turn browser sessions into a **structured, persistent workspace** where:
 6. Work on both Chrome and Edge with a shared codebase.
 
 ## Non-goals (V1)
-1. Cloud sync
-2. Multi-user collaboration
-3. AI summarization or AI-assisted organization
-4. Firefox support
-5. Payments / premium gating
-6. Google Drive backup integration
+1. Multi-user collaboration
+2. AI summarization or AI-assisted organization
+3. Firefox support
+4. Payments / premium gating
+5. Google Drive backup integration
 
 ## Target users
 
@@ -136,13 +135,27 @@ Search tree by:
 
 ## 8. Export/import
 Provide:
-- JSON export/import for full fidelity
-- optional HTML/Markdown/text export for sharing
+- JSON export/import for full fidelity.
+- Automatic portability sanitization: when importing a backup JSON, the status of open window/tab nodes is converted to `"saved"` and their browser-session-specific IDs are stripped. This prevents the background reconciler from deleting them upon import in a different browser session or computer.
+- Safety rollback: Automatically creates a safety database snapshot before overwriting the outliner tree during import.
 
 ### Acceptance criteria
-- User can export full workspace to JSON.
-- User can import prior export.
+- User can export full workspace to a local JSON file.
+- User can import a prior JSON backup to restore their tree.
+- Import sanitization handles cross-device/cross-browser tab sessions correctly without losing data.
 - Export/import preserves hierarchy and metadata.
+
+## 9. GitHub Cloud Sync
+Provide:
+- Automatic remote cloud sync of the session tree using the GitHub Contents API.
+- Secure credential management: personal access token (PAT), repository path (`owner/repo`), and custom backup file path are securely saved in local storage.
+- Push: base64-encodes the outliner database tree and commits/pushes it directly to GitHub.
+- Pull: pulls and validates the backup from GitHub, applying safety rollback snapshots and sanitization before importing.
+
+### Acceptance criteria
+- User can configure their GitHub PAT and backup repository.
+- User can push the local tree to GitHub.
+- User can pull the backup from GitHub on another machine to restore the outliner tree.
 
 # User flows
 

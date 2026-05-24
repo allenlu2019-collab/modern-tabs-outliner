@@ -17,6 +17,15 @@ For peace of mind and strict session management, the outliner includes a Snapsho
 - **Save**: Click the "💾 Backup & Restore" button to capture an instant, point-in-time snapshot of your entire tree hierarchy (including custom names, groups, and all open/saved tabs).
 - **Restore**: Easily view past snapshots, complete with a relative time indicator (e.g., `(2 hours ago)`). Restoring a backup safely overwrites the outliner state and instantly commands the background reconciler to sync your physical browser tabs against the retrieved snapshot.
 
+#### Local JSON Backup & Import (Cross-Browser Portability)
+- **Export JSON**: Download a complete, full-fidelity JSON file representing your entire outliner workspace.
+- **Import JSON**: Restores a prior JSON backup. The system automatically creates a safety snapshot before overwriting, and **sanitizes** the imported data (converting `"open"` states to `"saved"` and stripping browser-session IDs) to ensure that backup files are fully portable across browser engines (e.g., Chrome to Edge) and device boundaries without reconciler conflicts.
+
+#### GitHub Cloud Sync
+- **Cloud Backup**: Paste a GitHub Personal Access Token (PAT), target repository path (`owner/repo`), and custom backup file path in the settings.
+- **Push**: Instantly base64-encodes and commits your outliner tree hierarchy to your private/public GitHub repository.
+- **Pull**: Instantly pulls and restores your tree from GitHub, applying the same safety checks and portability sanitization. This enables seamless, secure cloud sync of your tabs and workspace across different computers.
+
 ## B. Architecture
 The technical design of this extension is divided into four main layers:
 1. **Background Service Worker**: Manages browser state, persistence, and coordinates events.
