@@ -192,7 +192,21 @@ export async function importNodes(nodes: BaseNode[]): Promise<void> {
     console.warn("Failed to create pre-import backup snapshot:", err);
   }
 
-  // 2. Clear existing store and put the new nodes
+  // 2. Sanitize nodes for cross-session/cross-browser portability
+  const sanitizedNodes = nodes.map(node => {
+    const sanitized = { ...node };
+    if (sanitized.status === "open") {
+      sanitized.status = "saved";
+    }
+    delete sanitized.browserTabId;
+    delete sanitized.browserWindowId;
+    if (sanitized.active) {
+      sanitized.active = false;
+    }
+    return sanitized;
+  });
+
+  // 3. Clear existing store and put the sanitized nodes
   const db = await getDB();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -202,5 +216,5 @@ export async function importNodes(nodes: BaseNode[]): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 
-  await putNodes(nodes);
+  await putNodes(sanitizedNodes);
 }

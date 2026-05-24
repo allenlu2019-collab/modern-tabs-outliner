@@ -162,5 +162,85 @@ describe('Import & Export Validation', () => {
     expect(validation.errors).toHaveLength(0);
     expect(validation.nodes).toEqual(originalNodes);
   });
+
+  it('should sanitize nodes on import by converting status to saved and clearing browser IDs', async () => {
+    const mockPut = vi.fn();
+    const mockClear = vi.fn();
+    
+    const mockStore = {
+      put: mockPut,
+      clear: mockClear,
+      getAll: () => {
+        const req = {
+          onsuccess: null as any,
+          result: []
+        };
+        setTimeout(() => {
+          if (req.onsuccess) req.onsuccess();
+        }, 0);
+        return req;
+      }
+    };
+
+    const mockDb = {
+      transaction: () => {
+        const tx = {
+          objectStore: () => mockStore,
+          oncomplete: null as any,
+          onerror: null as any
+        };
+        setTimeout(() => {
+          if (tx.oncomplete) tx.oncomplete();
+        }, 0);
+        return tx;
+      }
+    };
+
+    const mockOpenRequest = {
+      onsuccess: null as any,
+      onerror: null as any,
+      onupgradeneeded: null as any,
+      result: mockDb
+    };
+
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        setTimeout(() => {
+          if (mockOpenRequest.onsuccess) mockOpenRequest.onsuccess();
+        }, 0);
+        return mockOpenRequest;
+      }
+    });
+
+    const testNodes: BaseNode[] = [
+      { id: 'root', type: 'workspace', parentId: null, childIds: ['win-1'], createdAt: 0, updatedAt: 0, sortOrder: 0 },
+      { id: 'win-1', type: 'window', parentId: 'root', childIds: ['tab-1'], createdAt: 0, updatedAt: 0, sortOrder: 0, status: 'open', browserWindowId: 999 },
+      { id: 'tab-1', type: 'tab', parentId: 'win-1', childIds: [], createdAt: 0, updatedAt: 0, sortOrder: 0, url: 'https://youtube.com', status: 'open', browserTabId: 888, browserWindowId: 999, active: true }
+    ];
+
+    const { importNodes } = await import('../src/storage');
+    await importNodes(testNodes);
+
+    expect(mockClear).toHaveBeenCalled();
+
+    // Verify all nodes passed to put have been sanitized
+    const savedNodes = mockPut.mock.calls.map(call => call[0]);
+    
+    // Check window node
+    const winNode = savedNodes.find(n => n.id === 'win-1');
+    expect(winNode).toBeDefined();
+    expect(winNode.status).toBe('saved');
+    expect(winNode.browserWindowId).toBeUndefined();
+
+    // Check tab node
+    const tabNode = savedNodes.find(n => n.id === 'tab-1');
+    expect(tabNode).toBeDefined();
+    expect(tabNode.status).toBe('saved');
+    expect(tabNode.browserTabId).toBeUndefined();
+    expect(tabNode.browserWindowId).toBeUndefined();
+    expect(tabNode.active).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
 });
 

@@ -255,8 +255,8 @@ async function reconcileTabs() {
   const tabByBrowserId = new Map(existingNodes.filter(n => n.type === 'tab' && n.browserTabId).map(n => [n.browserTabId, n]));
 
   // --- PASS 2: Heuristic Fallback Matching (for Chrome Restarts / Snapshot Restores) ---
-  const fallbackDbWindows = existingNodes.filter(n => n.type === 'window' && (!n.browserWindowId || !activeWindowIds.has(n.browserWindowId)));
-  const fallbackDbTabs = existingNodes.filter(n => n.type === 'tab' && (!n.browserTabId || !activeTabIds.has(n.browserTabId)));
+  const fallbackDbWindows = existingNodes.filter(n => n.type === 'window' && n.status === 'open' && (!n.browserWindowId || !activeWindowIds.has(n.browserWindowId)));
+  const fallbackDbTabs = existingNodes.filter(n => n.type === 'tab' && n.status === 'open' && (!n.browserTabId || !activeTabIds.has(n.browserTabId)));
 
   const isDescendant = (node: BaseNode, ancestorId: string): boolean => {
       let curr: BaseNode | undefined = node;
