@@ -6,21 +6,13 @@ let outlinerWindowId: number | null = null;
 let pauseReconcile = false;
 const intentionallySavedNodes = new Set<string>();
 
-function shouldMuteUrl(url?: string): boolean {
-  if (!url) return false;
-  const u = url.toLowerCase();
-  const audioVideoDomains = [
-    'youtube.com', 'youtu.be', 'bilibili.com', 'spotify.com', 
-    'soundcloud.com', 'vimeo.com', 'twitch.tv', 'netflix.com'
-  ];
-  if (audioVideoDomains.some(domain => u.includes(domain))) {
-    return true;
+function addPausedFlag(url?: string): string {
+  const originalUrl = url || "about:blank";
+  if (!originalUrl.startsWith('http')) return originalUrl;
+  if (originalUrl.includes('#')) {
+    return `${originalUrl}-outliner-paused`;
   }
-  const extensions = ['.mp3', '.mp4', '.wav', '.ogg', '.webm', '.m4a'];
-  if (extensions.some(ext => u.split('?')[0].endsWith(ext))) {
-    return true;
-  }
-  return false;
+  return `${originalUrl}#outliner-paused`;
 }
 
 export async function handleMessage(msg: any) {
@@ -48,10 +40,7 @@ export async function handleMessage(msg: any) {
             });
         };
         const childTabs = getAllChildTabs(node);
-        const urls = childTabs.map(t => {
-            const originalUrl = t.url || "about:blank";
-            return shouldMuteUrl(originalUrl) ? `${originalUrl}#outliner-paused` : originalUrl;
-        });
+        const urls = childTabs.map(t => addPausedFlag(t.url));
         
         // Target window detection for branch restoration
         let targetWindowId: number | undefined = undefined;
@@ -73,8 +62,7 @@ export async function handleMessage(msg: any) {
             // Restore into existing window
             for (const tNode of childTabs) {
                  if (tNode.status !== 'open') {
-                    const originalUrl = tNode.url || "about:blank";
-                    const restoreUrl = shouldMuteUrl(originalUrl) ? `${originalUrl}#outliner-paused` : originalUrl;
+                    const restoreUrl = addPausedFlag(tNode.url);
                     const t = await chrome.tabs.create({ url: restoreUrl, windowId: targetWindowId });
                     tNode.browserTabId = t.id;
                     tNode.browserWindowId = t.windowId;

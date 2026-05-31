@@ -39,7 +39,7 @@ describe('Background Restoration Logic', () => {
 
     // Verify chrome.windows.create was called with the array of URLs
     expect(chrome.windows.create).toHaveBeenCalledWith(expect.objectContaining({
-      url: ['https://site1.com', 'https://site2.com'],
+      url: ['https://site1.com#outliner-paused', 'https://site2.com#outliner-paused'],
       focused: true
     }));
 
@@ -51,7 +51,7 @@ describe('Background Restoration Logic', () => {
     ]));
   });
 
-  it('automatically adds #outliner-paused hash to restored tabs containing video or audio URLs (like YouTube) during window restoration', async () => {
+  it('automatically adds #outliner-paused hash to all restored http/https URLs during window restoration', async () => {
     const mockNodes = [
       { id: 'win-1', type: 'window', childIds: ['tab-1', 'tab-2'], status: 'saved' },
       { id: 'tab-1', type: 'tab', parentId: 'win-1', url: 'https://www.youtube.com/watch?v=123', status: 'saved' },
@@ -66,16 +66,16 @@ describe('Background Restoration Logic', () => {
       id: 123,
       tabs: [
         { id: 10, url: 'https://www.youtube.com/watch?v=123#outliner-paused', active: true },
-        { id: 11, url: 'https://normal-site.com', active: false }
+        { id: 11, url: 'https://normal-site.com#outliner-paused', active: false }
       ]
     };
     (global.chrome.windows.create as any).mockResolvedValue(mockCreatedWin);
 
     await handleMessage({ type: 'RESTORE_NODE', nodeId: 'win-1' });
 
-    // Verify chrome.windows.create was called with the #outliner-paused hash for the YouTube tab
+    // Verify chrome.windows.create was called with the #outliner-paused hash for all http/https tabs
     expect(chrome.windows.create).toHaveBeenCalledWith(expect.objectContaining({
-      url: ['https://www.youtube.com/watch?v=123#outliner-paused', 'https://normal-site.com'],
+      url: ['https://www.youtube.com/watch?v=123#outliner-paused', 'https://normal-site.com#outliner-paused'],
       focused: true
     }));
 

@@ -50,7 +50,7 @@ describe('Group Logic & Restoration', () => {
 
     // Verify it gathered BOTH nested and top tabs
     expect(chrome.windows.create).toHaveBeenCalledWith(expect.objectContaining({
-      url: expect.arrayContaining(['https://nested.com', 'https://top.com'])
+      url: expect.arrayContaining(['https://nested.com#outliner-paused', 'https://top.com#outliner-paused'])
     }));
   });
 });
