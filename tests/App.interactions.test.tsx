@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import App from '../src/App';
+
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>();
+  return {
+    ...actual,
+    DndContext: ({ children, onDragEnd }: any) => {
+      (global as any).triggerDragEnd = onDragEnd;
+      return <div data-testid="mock-dnd-context">{children}</div>;
+    },
+  };
+});
 
 const { mockNodes } = vi.hoisted(() => ({
   mockNodes: [
@@ -160,6 +171,56 @@ describe('App React Component System Integration', () => {
     fireEvent.click(removeBtn);
 
     await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect((global as any).chrome.tabs.remove).toHaveBeenCalledWith(999);
+  });
+
+  it('transitions open tab to saved and closes physical tab when dropped into a saved window', async () => {
+    mockNodes.push({
+      id: 'win-saved',
+      type: 'window',
+      title: 'Saved Window',
+      status: 'saved',
+      parentId: 'root',
+      childIds: [],
+      browserWindowId: 102,
+      createdAt: 0,
+      updatedAt: 0,
+      sortOrder: 0
+    });
+
+    render(<App />);
+
+    await screen.findByText('Hanging Test Tab');
+
+    const event = {
+      active: {
+        id: 'tab-1',
+        data: { current: { node: mockNodes.find(n => n.id === 'tab-1') } }
+      },
+      over: {
+        id: 'win-saved',
+        data: { current: { node: mockNodes.find(n => n.id === 'win-saved') } }
+      }
+    };
+
+    const triggerDragEnd = (global as any).triggerDragEnd;
+    expect(triggerDragEnd).toBeDefined();
+
+    await act(async () => {
+      await triggerDragEnd(event);
+    });
+
+    const storage = await import('../src/storage');
+    expect(storage.putNodes).toHaveBeenCalled();
+
+    const lastCallArgs = vi.mocked(storage.putNodes).mock.calls;
+    const persistedNodes = lastCallArgs[lastCallArgs.length - 1][0] as any[];
+    const updatedTab = persistedNodes.find(n => n.id === 'tab-1');
+    expect(updatedTab).toBeDefined();
+    expect(updatedTab.status).toBe('saved');
+    expect(updatedTab.browserTabId).toBeUndefined();
+    expect(updatedTab.browserWindowId).toBeUndefined();
 
     expect((global as any).chrome.tabs.remove).toHaveBeenCalledWith(999);
   });

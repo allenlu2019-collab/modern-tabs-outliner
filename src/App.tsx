@@ -761,10 +761,46 @@ function App() {
 
       const oldParentId = activeNode.parentId || 'root';
       const oldParent = nodeMap.get(oldParentId);
-      const dropIntoContainer = overNode.type === 'group';
+      const dropIntoContainer = 
+        overNode.type === 'group' || 
+        (overNode.type === 'window' && activeNode.type !== 'window');
       const newParentId = dropIntoContainer ? overNode.id : (overNode.parentId || 'root');
       const newParent = nodeMap.get(newParentId);
       if (!newParent) return;
+
+      // Cycle & Hierarchy Constraints Check
+      const isDescendantOf = (childId: string, parentId: string, map: Map<string, BaseNode>): boolean => {
+        let curr = map.get(childId);
+        while (curr) {
+          if (curr.parentId === parentId) return true;
+          curr = curr.parentId ? map.get(curr.parentId) : undefined;
+        }
+        return false;
+      };
+
+      // 1. Cycle check: Cannot drop under itself or any of its descendants
+      if (newParentId === activeNode.id || isDescendantOf(newParentId, activeNode.id, nodeMap)) {
+        console.warn(`[DragDrop] Invalid move: cannot drop node inside itself or its descendants.`);
+        return;
+      }
+
+      // 2. Window constraint: Window nodes can only exist at root level
+      if (activeNode.type === 'window' && newParentId !== 'root') {
+        console.warn(`[DragDrop] Invalid move: Window nodes can only exist at root level.`);
+        return;
+      }
+
+      // 3. Tab constraint: Tab nodes can only be parented under windows or groups
+      if (activeNode.type === 'tab' && newParent.type !== 'window' && newParent.type !== 'group') {
+        console.warn(`[DragDrop] Invalid move: Tab nodes must be placed inside a window or a group.`);
+        return;
+      }
+
+      // 4. Group constraint: Group nodes cannot be placed inside tabs
+      if (activeNode.type === 'group' && newParent.type === 'tab') {
+        console.warn(`[DragDrop] Invalid move: Group nodes cannot be placed inside tabs.`);
+        return;
+      }
 
       const isSameParent = oldParentId === newParentId;
       let insertIndex = 0;
@@ -787,7 +823,6 @@ function App() {
 
       const toPersist: BaseNode[] = [activeNode, newParent];
       if (oldParent && oldParent.id !== newParent.id) toPersist.push(oldParent);
-      await putNodes(toPersist);
 
       // Auto-remove old window if it's now empty after cross-parent move
       if (!isSameParent && oldParent?.type === 'window' && oldParent.childIds.length === 0) {
@@ -797,12 +832,11 @@ function App() {
         }
       }
 
-      // --- Physical Chrome Tab Synchronization ---
       // --- Physical Chrome Tab Synchronization (Recursive) ---
       const findEffectiveWindow = (startNode: BaseNode, map: Map<string, BaseNode>) => {
         let curr: BaseNode | undefined = startNode;
         while (curr) {
-          if (curr.type === 'window' && curr.browserWindowId) return { winId: curr.browserWindowId, rootId: curr.id };
+          if (curr.type === 'window' && curr.status === 'open' && curr.browserWindowId) return { winId: curr.browserWindowId, rootId: curr.id };
           curr = curr.parentId ? map.get(curr.parentId) : undefined;
         }
         return null;
@@ -810,19 +844,20 @@ function App() {
 
       const syncResult = findEffectiveWindow(newParent, nodeMap);
 
+      // Helper to find all open tabs in a branch
+      const getOpenTabsInBranch = (id: string): BaseNode[] => {
+        const n = nodeMap.get(id);
+        if (!n) return [];
+        if (n.type === 'tab') return n.status === 'open' ? [n] : [];
+        return (n.childIds || []).flatMap(cid => getOpenTabsInBranch(cid));
+      };
+
       if (syncResult) {
         const { winId: effectiveWindowId, rootId: rootAncestorId } = syncResult;
-        
-        // Find all open tabs in the branch we just moved
-        const getOpenTabsInBranch = (id: string): BaseNode[] => {
-          const n = nodeMap.get(id);
-          if (!n) return [];
-          if (n.type === 'tab') return n.status === 'open' ? [n] : [];
-          return (n.childIds || []).flatMap(cid => getOpenTabsInBranch(cid));
-        };
-
         const branchTabs = getOpenTabsInBranch(activeNode.id);
         
+        await putNodes(toPersist);
+
         if (branchTabs.length > 0) {
           // Calculate physical indices for each tab in the branch
           // Strategy: re-run the tree traversal for each tab based on its NEW position in the root window
@@ -862,7 +897,30 @@ function App() {
           }
         }
       } else {
-        console.warn(`[Sync] Drop target is not under any physical window. Not moving browser tabs.`);
+        console.warn(`[Sync] Drop target is not under any physical window. Converting moved tabs to saved.`);
+        const branchTabs = getOpenTabsInBranch(activeNode.id);
+        const tabsToClose: number[] = [];
+        for (const tab of branchTabs) {
+          if (tab.browserTabId) {
+            tabsToClose.push(tab.browserTabId);
+          }
+          tab.status = 'saved';
+          tab.active = false;
+          delete tab.browserTabId;
+          delete tab.browserWindowId;
+          
+          if (!toPersist.some(p => p.id === tab.id)) {
+            toPersist.push(tab);
+          }
+        }
+
+        await putNodes(toPersist);
+
+        if (tabsToClose.length > 0 && typeof chrome !== 'undefined' && chrome.tabs) {
+          for (const tabId of tabsToClose) {
+            chrome.tabs.remove(tabId).catch(() => {});
+          }
+        }
       }
 
       window.dispatchEvent(new CustomEvent('REFRESH_TREE'));
