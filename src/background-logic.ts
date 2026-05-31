@@ -48,7 +48,10 @@ export async function handleMessage(msg: any) {
             });
         };
         const childTabs = getAllChildTabs(node);
-        const urls = childTabs.map(t => t.url || "about:blank");
+        const urls = childTabs.map(t => {
+            const originalUrl = t.url || "about:blank";
+            return shouldMuteUrl(originalUrl) ? `${originalUrl}#outliner-paused` : originalUrl;
+        });
         
         // Target window detection for branch restoration
         let targetWindowId: number | undefined = undefined;
@@ -70,7 +73,9 @@ export async function handleMessage(msg: any) {
             // Restore into existing window
             for (const tNode of childTabs) {
                  if (tNode.status !== 'open') {
-                    const t = await chrome.tabs.create({ url: tNode.url, windowId: targetWindowId });
+                    const originalUrl = tNode.url || "about:blank";
+                    const restoreUrl = shouldMuteUrl(originalUrl) ? `${originalUrl}#outliner-paused` : originalUrl;
+                    const t = await chrome.tabs.create({ url: restoreUrl, windowId: targetWindowId });
                     tNode.browserTabId = t.id;
                     tNode.browserWindowId = t.windowId;
                     tNode.status = "open";
