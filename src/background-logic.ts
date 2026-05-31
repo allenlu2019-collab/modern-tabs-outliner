@@ -6,6 +6,23 @@ let outlinerWindowId: number | null = null;
 let pauseReconcile = false;
 const intentionallySavedNodes = new Set<string>();
 
+function shouldMuteUrl(url?: string): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  const audioVideoDomains = [
+    'youtube.com', 'youtu.be', 'bilibili.com', 'spotify.com', 
+    'soundcloud.com', 'vimeo.com', 'twitch.tv', 'netflix.com'
+  ];
+  if (audioVideoDomains.some(domain => u.includes(domain))) {
+    return true;
+  }
+  const extensions = ['.mp3', '.mp4', '.wav', '.ogg', '.webm', '.m4a'];
+  if (extensions.some(ext => u.split('?')[0].endsWith(ext))) {
+    return true;
+  }
+  return false;
+}
+
 export async function handleMessage(msg: any) {
   if (msg.type === "INTENTIONAL_SAVE") {
     intentionallySavedNodes.add(msg.nodeId);
@@ -58,6 +75,12 @@ export async function handleMessage(msg: any) {
                     tNode.browserWindowId = t.windowId;
                     tNode.status = "open";
                     tNode.updatedAt = Date.now();
+                    
+                    if (t.id && shouldMuteUrl(tNode.url)) {
+                      chrome.tabs.update(t.id, { muted: true }).catch(() => {});
+                      tNode.muted = true;
+                    }
+                    
                     await putNode(tNode);
                  }
             }
@@ -83,6 +106,12 @@ export async function handleMessage(msg: any) {
                   tabNode.status = "open";
                   tabNode.active = t.active;
                   tabNode.updatedAt = Date.now();
+                  
+                  if (t.id && shouldMuteUrl(tabNode.url)) {
+                    chrome.tabs.update(t.id, { muted: true }).catch(() => {});
+                    tabNode.muted = true;
+                  }
+                  
                   nodesToPut.push(tabNode);
                 }
               });
