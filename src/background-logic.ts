@@ -80,12 +80,6 @@ export async function handleMessage(msg: any) {
                     tNode.browserWindowId = t.windowId;
                     tNode.status = "open";
                     tNode.updatedAt = Date.now();
-                    
-                    if (t.id && shouldMuteUrl(tNode.url)) {
-                      chrome.tabs.update(t.id, { muted: true }).catch(() => {});
-                      tNode.muted = true;
-                    }
-                    
                     await putNode(tNode);
                  }
             }
@@ -111,12 +105,6 @@ export async function handleMessage(msg: any) {
                   tabNode.status = "open";
                   tabNode.active = t.active;
                   tabNode.updatedAt = Date.now();
-                  
-                  if (t.id && shouldMuteUrl(tabNode.url)) {
-                    chrome.tabs.update(t.id, { muted: true }).catch(() => {});
-                    tabNode.muted = true;
-                  }
-                  
                   nodesToPut.push(tabNode);
                 }
               });

@@ -10,28 +10,29 @@
       console.warn('[Outliner] Failed to clean URL hash:', e);
     }
 
-    // 2. Mute and pause video and audio elements as they appear
+    const elementsToProtect = new Set();
+
+    const onPlay = (e) => {
+      e.target.autoplay = false;
+      e.target.pause();
+    };
+
+    const onCanPlay = (e) => {
+      e.target.autoplay = false;
+      e.target.pause();
+    };
+
+    // Pause video and audio elements as they appear
     const pauseMedia = (el) => {
       if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
-        el.muted = true;
         el.autoplay = false;
         el.pause();
         
-        // Prevent autoplay by pausing on play event
-        const onPlay = () => {
-          el.muted = true;
-          el.pause();
-          el.removeEventListener('play', onPlay);
-        };
-        el.addEventListener('play', onPlay);
-        
-        // Also add a listener for canplay
-        const onCanPlay = () => {
-          el.muted = true;
-          el.pause();
-          el.removeEventListener('canplay', onCanPlay);
-        };
-        el.addEventListener('canplay', onCanPlay);
+        if (!elementsToProtect.has(el)) {
+          elementsToProtect.add(el);
+          el.addEventListener('play', onPlay);
+          el.addEventListener('canplay', onCanPlay);
+        }
       }
     };
 
@@ -57,15 +58,38 @@
       subtree: true
     });
 
-    // Also run a periodic check for 10 seconds to catch any delayed/JS-created players
+    // Cleanup function when user interacts or after timeout
+    const cleanupAutoplayProtection = () => {
+      clearInterval(interval);
+      observer.disconnect();
+      
+      elementsToProtect.forEach(el => {
+        try {
+          el.removeEventListener('play', onPlay);
+          el.removeEventListener('canplay', onCanPlay);
+        } catch (e) {}
+      });
+      elementsToProtect.clear();
+
+      window.removeEventListener('mousedown', cleanupAutoplayProtection, true);
+      window.removeEventListener('keydown', cleanupAutoplayProtection, true);
+      window.removeEventListener('touchstart', cleanupAutoplayProtection, true);
+      console.log('[Outliner] Autoplay protection cleared due to user interaction or timeout.');
+    };
+
+    // Run a periodic check for 10 seconds to catch delayed elements
     let checks = 0;
     const interval = setInterval(() => {
       document.querySelectorAll('video, audio').forEach(pauseMedia);
       checks++;
       if (checks > 50) { // 50 * 200ms = 10 seconds
-        clearInterval(interval);
-        observer.disconnect();
+        cleanupAutoplayProtection();
       }
     }, 200);
+
+    // Listen for any user interaction to disable autoplay protection instantly
+    window.addEventListener('mousedown', cleanupAutoplayProtection, true);
+    window.addEventListener('keydown', cleanupAutoplayProtection, true);
+    window.addEventListener('touchstart', cleanupAutoplayProtection, true);
   }
 })();
