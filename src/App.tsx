@@ -73,14 +73,14 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(node.title || '');
 
-  // Auto-expand during search or status changes
+  // Auto-expand on status change (e.g. when a saved window is opened)
   useEffect(() => {
-    if (forceExpand) {
-      setCollapsed(false);
-    } else if (node.type === 'window' || node.type === 'group') {
+    if (node.type === 'window' || node.type === 'group') {
       setCollapsed(node.status !== 'open');
     }
-  }, [forceExpand, node.status, node.type]);
+  }, [node.status, node.type]);
+
+  const displayCollapsed = forceExpand ? false : collapsed;
 
   const {
     attributes,
@@ -242,9 +242,9 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
   return (
     <div className="tree-node" ref={setNodeRef} style={style}>
       {node.type === 'window' || node.type === 'group' ? (
-        <div className="group-header" onClick={() => setCollapsed(!collapsed)}>
+        <div className="group-header" onClick={() => setCollapsed(!displayCollapsed)}>
           <span className="drag-handle" {...attributes} {...listeners}>⣿</span>
-          <span className="collapser">{collapsed ? '▶ ' : '▼ '}</span>
+          <span className="collapser">{displayCollapsed ? '▶ ' : '▼ '}</span>
           <span className="node-icon">{node.type === 'window' ? '🪟' : '📁'}</span>
           {isEditing ? (
             <form onSubmit={handleRename} className="inline-edit" onClick={(e) => e.stopPropagation()}>
@@ -274,7 +274,7 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
               title="Click to rename"
             >
               {node.title} {node.status && node.status !== 'open' && <span className="status-badge">[{node.status}]</span>}
-              {collapsed && node.children && <span className="child-count">({node.children.length})</span>}
+              {displayCollapsed && node.children && <span className="child-count">({node.children.length})</span>}
             </span>
           )}
           <div className="node-actions group-actions">
@@ -311,7 +311,7 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
         </div>
       )}
 
-      {!collapsed && node.children && node.children.length > 0 && (
+      {!displayCollapsed && node.children && node.children.length > 0 && (
         <div className="node-children">
           {node.children.map(child => (
             <NodeItem key={child.id} node={child} depth={depth + 1} isDragActive={isDragActive} forceExpand={forceExpand} />
