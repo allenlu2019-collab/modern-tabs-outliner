@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Modern Tabs Outliner",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "A modern tabs outliner for Chrome and Edge.",
   "icons": {
     "16": "icon16.png",
@@ -48,8 +48,7 @@
         "favicon.svg"
       ],
       "matches": [
-        "<all_urls>",
-        "chrome-extension://*/*"
+        "<all_urls>"
       ]
     }
   ]

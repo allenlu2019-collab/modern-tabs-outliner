@@ -1,5 +1,5 @@
 import type { BaseNode } from "./types";
-import { putNodes, getAllNodes, putNode, removeNode, clearAllNodes } from "./storage";
+import { putNodes, getAllNodes, putNode, removeNode } from "./storage";
 import { positionalWeave, calculateRestoreIndex, generateId } from "./utils";
 
 let outlinerWindowId: number | null = null;
@@ -219,11 +219,7 @@ export function initializeBackground() {
   });
 
   chrome.runtime.onInstalled.addListener(async (details) => {
-    console.log("Extension installed and initialized.");
-    if (details.reason === "update" || details.reason === "install") {
-       console.log("Developer Reload Detected: Wiping stale IDB cache to rebuild from absolute browser state...");
-       await clearAllNodes();
-    }
+    console.log("Extension installed and initialized. Reason:", details.reason);
     await reconcileTabs();
   });
 
@@ -260,6 +256,13 @@ async function reconcileTabs() {
 
   const existingNodes = await getAllNodes();
   const nodeMap = new Map(existingNodes.map(n => [n.id, n]));
+
+  // Clean up intentionallySavedNodes set to prevent memory leaks
+  intentionallySavedNodes.forEach(id => {
+    if (!nodeMap.has(id)) {
+      intentionallySavedNodes.delete(id);
+    }
+  });
 
   const winByBrowserId = new Map(existingNodes.filter(n => n.type === 'window' && n.browserWindowId).map(n => [n.browserWindowId, n]));
   const tabByBrowserId = new Map(existingNodes.filter(n => n.type === 'tab' && n.browserTabId).map(n => [n.browserTabId, n]));
@@ -428,8 +431,10 @@ async function reconcileTabs() {
             tabNode.title = t.title || tabNode.title;
             tabNode.favIconUrl = t.favIconUrl || tabNode.favIconUrl;
         }
-        
-        tabNode.url = t.url || tabNode.url;
+        const isValidUrl = t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://newtab');
+        if (isValidUrl) {
+          tabNode.url = t.url;
+        }
         tabNode.updatedAt = now;
         tabNode.active = t.active;
         tabNode.browserWindowId = w.id;
