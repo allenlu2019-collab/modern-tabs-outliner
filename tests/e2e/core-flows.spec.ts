@@ -144,3 +144,25 @@ test.describe('Group Creation And Search', () => {
     await expect(page.getByText('Current Session')).toBeVisible();
   });
 });
+
+test.describe('State Persistence', () => {
+  test('Persist Added Group Across Reload', async ({ page }) => {
+    // 1. Navigate to `/`.
+    await page.goto('/');
+
+    // 2. Click Add Group.
+    await page.getByRole('button', { name: 'Add Group' }).click();
+
+    // 3. Verify `NEW GROUP` appears.
+    await expect(page.getByText('NEW GROUP')).toBeVisible();
+
+    // 4. Reload the page.
+    await page.reload();
+
+    await expect(page.getByText('NEW GROUP')).toBeVisible();
+    await expect(page.getByText('Current Session')).toBeVisible();
+    await expect(page.getByPlaceholder('Search tabs, windows, groups... (Ctrl+F)')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Backup & Restore' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add Group' })).toBeVisible();
+  });
+});

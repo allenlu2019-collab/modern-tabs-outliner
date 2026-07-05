@@ -119,3 +119,17 @@ Modern Outliner is a React and TypeScript browser-extension UI for organizing ta
 - `NEW GROUP` remains visible.
 - The search can be cleared by clearing the input.
 
+### 5. State Persistence
+
+#### 5.1 Persist Added Group Across Reload
+
+**Steps:**
+1. Navigate to `/`.
+2. Click Add Group.
+3. Verify `NEW GROUP` appears.
+4. Reload the page.
+
+**Expected Results:**
+- `NEW GROUP` is still visible after reload.
+- The group still appears under `Current Session`.
+- The search input and primary session controls remain available after reload.
