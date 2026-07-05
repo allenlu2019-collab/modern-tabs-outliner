@@ -285,12 +285,12 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
                 return !!(n.children && n.children.some(child => hasOpenTabs(child)));
               };
               if (hasOpenTabs(node)) {
-                return <button className="btn-icon" onClick={closeBranch} title={`Close all in ${node.type}`}>⨯</button>;
+                return <button className="btn-icon" onClick={closeBranch} title={`Close all in ${node.type}`} aria-label={`Close all in ${node.type}`}>⨯</button>;
               } else {
-                return <button className="btn-icon" onClick={restoreBranch} title={`Restore all in ${node.type}`}>↻</button>;
+                return <button className="btn-icon" onClick={restoreBranch} title={`Restore all in ${node.type}`} aria-label={`Restore all in ${node.type}`}>↻</button>;
               }
             })()}
-            <button className="btn-icon" onClick={node.type === 'window' ? removeWindowNodeBtn : removeNodeBtn} title="Remove">🗑️</button>
+            <button className="btn-icon" onClick={node.type === 'window' ? removeWindowNodeBtn : removeNodeBtn} title="Remove" aria-label="Remove">🗑️</button>
           </div>
         </div>
       ) : (
@@ -304,9 +304,9 @@ const NodeItem = ({ node, depth, isDragActive, forceExpand }: { node: TreeNode; 
           <div className={`node-title ${node.active ? 'active-tab' : ''}`} title={node.title}>{node.title}</div>
           <div className="node-actions">
             {node.status === 'open' && (
-              <button className="btn-icon" onClick={closeTab} title="Close Tab">⨯</button>
+              <button className="btn-icon" onClick={closeTab} title="Close Tab" aria-label="Close Tab">⨯</button>
             )}
-            <button className="btn-icon" onClick={removeNodeBtn} title="Remove Node">🗑️</button>
+            <button className="btn-icon" onClick={removeNodeBtn} title="Remove Node" aria-label="Remove Node">🗑️</button>
           </div>
         </div>
       )}
@@ -952,12 +952,13 @@ function App() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        {isSearching && <button className="clear-search" title="Clear search" onClick={() => setSearchQuery('')}>×</button>}
+        {isSearching && <button className="clear-search" title="Clear search" aria-label="Clear search" onClick={() => setSearchQuery('')}>×</button>}
         {isSearching && matchingTabs.length > 0 && (
           <button
             className="extract-btn"
             onClick={extractToNewWindow}
             title={`Extract ${matchingTabs.length} tab${matchingTabs.length !== 1 ? 's' : ''} to new window`}
+            aria-label={`Extract ${matchingTabs.length} tab${matchingTabs.length !== 1 ? 's' : ''} to new window`}
           >
             🪟↗ {matchingTabs.length}
           </button>
