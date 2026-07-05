@@ -966,8 +966,8 @@ function App() {
 
       <div className="session-root">
         <span className="root-icon">📁</span> {isSearching ? `Search Results (${allNodeIds.length})` : 'Current Session'}
-        <button className="btn-icon add-group-btn" style={{marginRight: '8px', marginLeft: 'auto'}} onClick={() => setShowSnapshots(true)} title="Backup & Restore">💾</button>
-        <button className="btn-icon add-group-btn" style={{marginLeft: 0}} onClick={addGroup} title="Add Group">📁+</button>
+        <button className="btn-icon add-group-btn" style={{marginRight: '8px', marginLeft: 'auto'}} onClick={() => setShowSnapshots(true)} title="Backup & Restore" aria-label="Backup & Restore">💾</button>
+        <button className="btn-icon add-group-btn" style={{marginLeft: 0}} onClick={addGroup} title="Add Group" aria-label="Add Group">📁+</button>
       </div>
 
       {showSnapshots && (
