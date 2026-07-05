@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 // Global strictly mocked Chrome Extension API
 const chromeMock = {
   runtime: {
+    getURL: vi.fn((path: string) => `chrome-extension://modern-outliner/${path}`),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     onMessage: {
       addListener: vi.fn(),

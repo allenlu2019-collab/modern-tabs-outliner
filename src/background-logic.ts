@@ -6,6 +6,12 @@ let outlinerWindowId: number | null = null;
 let pauseReconcile = false;
 const intentionallySavedNodes = new Set<string>();
 
+type OutlinerWindowMatch = {
+  window: chrome.windows.Window;
+  outlinerTabs: chrome.tabs.Tab[];
+  hasOtherTabs: boolean;
+};
+
 function addPausedFlag(url?: string): string {
   const originalUrl = url || "about:blank";
   if (!originalUrl.startsWith('http')) return originalUrl;
@@ -13,6 +19,69 @@ function addPausedFlag(url?: string): string {
     return `${originalUrl}-outliner-paused`;
   }
   return `${originalUrl}#outliner-paused`;
+}
+
+function isOutlinerUrl(url: string | undefined, outlinerUrl: string): boolean {
+  return url === outlinerUrl || url === `${outlinerUrl}/` || !!url?.startsWith(`${outlinerUrl}#`) || !!url?.startsWith(`${outlinerUrl}?`);
+}
+
+async function findOutlinerWindows(outlinerUrl: string): Promise<OutlinerWindowMatch[]> {
+  const windows = await chrome.windows.getAll({ populate: true });
+  return windows
+    .map((window) => {
+      const tabs = window.tabs || [];
+      const outlinerTabs = tabs.filter((tab) => isOutlinerUrl(tab.url, outlinerUrl));
+      return {
+        window,
+        outlinerTabs,
+        hasOtherTabs: tabs.some((tab) => !isOutlinerUrl(tab.url, outlinerUrl)),
+      };
+    })
+    .filter((match) => match.outlinerTabs.length > 0);
+}
+
+export async function openOutlinerWindow() {
+  const outlinerUrl = chrome.runtime.getURL('index.html');
+  const matches = await findOutlinerWindows(outlinerUrl);
+  const primary = matches.find((match) => match.window.id === outlinerWindowId) || matches[0];
+
+  if (primary?.window.id) {
+    outlinerWindowId = primary.window.id;
+    await chrome.windows.update(primary.window.id, { focused: true });
+
+    const primaryTabId = primary.outlinerTabs[0]?.id;
+    if (primaryTabId) {
+      await chrome.tabs.update(primaryTabId, { active: true });
+    }
+
+    for (const duplicate of matches) {
+      const duplicateWindowId = duplicate.window.id;
+      if (
+        duplicateWindowId &&
+        duplicateWindowId !== primary.window.id &&
+        duplicate.window.type === 'popup' &&
+        !duplicate.hasOtherTabs
+      ) {
+        await chrome.windows.remove(duplicateWindowId);
+      }
+    }
+    return;
+  }
+
+  outlinerWindowId = null;
+  const win = await chrome.windows.create({
+    url: outlinerUrl,
+    type: 'popup',
+    width: 420,
+    height: 800,
+    top: 50,
+    left: 50,
+    focused: true
+  });
+
+  if (win.id) {
+    outlinerWindowId = win.id;
+  }
 }
 
 export async function handleMessage(msg: any) {
@@ -187,30 +256,7 @@ export function initializeBackground() {
     // Don't return true — handleMessage is fire-and-forget, no response needed.
   });
 
-  chrome.action.onClicked.addListener(async () => {
-    if (outlinerWindowId !== null) {
-      try {
-        await chrome.windows.update(outlinerWindowId, { focused: true });
-        return;
-      } catch (e) {
-        outlinerWindowId = null;
-      }
-    }
-    
-    const win = await chrome.windows.create({
-      url: chrome.runtime.getURL('index.html'),
-      type: 'popup',
-      width: 420,
-      height: 800,
-      top: 50,
-      left: 50,
-      focused: true
-    });
-    
-    if (win.id) {
-      outlinerWindowId = win.id;
-    }
-  });
+  chrome.action.onClicked.addListener(openOutlinerWindow);
 
   chrome.windows.onRemoved.addListener(async (windowId) => {
     if (windowId === outlinerWindowId) {
