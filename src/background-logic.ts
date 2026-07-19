@@ -109,6 +109,10 @@ export async function handleMessage(msg: any) {
             });
         };
         const childTabs = getAllChildTabs(node);
+        if (childTabs.length === 0) {
+          pauseReconcile = false;
+          return;
+        }
         const urls = childTabs.map(t => addPausedFlag(t.url));
         
         // Target window detection for branch restoration
@@ -177,6 +181,7 @@ export async function handleMessage(msg: any) {
       // --- Tab Restoration Logic ---
       let targetWindowId = node.browserWindowId;
       let isWinOpen = openWindows.some(w => w.id === targetWindowId);
+      let restoredTab: chrome.tabs.Tab | undefined;
 
       // If specific window isn't open, search up for a window ancestor
       if (!isWinOpen && node.parentId) {
@@ -187,12 +192,14 @@ export async function handleMessage(msg: any) {
           if (parent.type === "window") {
             const isParentOpen = openWindows.some(w => w.id === parent.browserWindowId);
             if (!isParentOpen) {
-              const newWin = await chrome.windows.create({ focused: true });
+              const restoreUrl = msg.url || node.url || "about:blank";
+              const newWin = await chrome.windows.create({ focused: true, url: restoreUrl });
               parent.browserWindowId = newWin.id;
               parent.status = "open";
               parent.updatedAt = Date.now();
               await putNode(parent);
               targetWindowId = newWin.id;
+              restoredTab = newWin.tabs?.[0];
             } else {
               targetWindowId = parent.browserWindowId;
             }
@@ -215,7 +222,12 @@ export async function handleMessage(msg: any) {
         }
       }
 
-      const t = await chrome.tabs.create({ url: msg.url, windowId: targetWindowId, index: calculatedIndex, active: true });
+      const t = restoredTab || await chrome.tabs.create({
+        url: msg.url || node.url,
+        windowId: targetWindowId,
+        index: calculatedIndex,
+        active: true
+      });
       node.browserTabId = t.id;
       node.browserWindowId = t.windowId;
       node.status = "open";
@@ -288,13 +300,28 @@ function broadcastUpdate() {
   chrome.runtime.sendMessage({ type: "TREE_UPDATED" }).catch(() => {});
 }
 
-async function reconcileTabs() {
+export async function reconcileTabs() {
   let windows = await chrome.windows.getAll({ populate: true });
   if (windows.some(w => !w.tabs)) {
       console.warn("[Outliner] Warning: chrome.windows.getAll returned windows without tabs. Skipping incomplete windows to prevent data loss.");
       windows = windows.filter(w => w.tabs);
   }
+
+  const outlinerUrl = chrome.runtime.getURL('index.html');
+  windows = windows.flatMap((window) => {
+    const tabs = (window.tabs || []).filter((tab) => !isOutlinerUrl(tab.url, outlinerUrl));
+    if (tabs.length === (window.tabs || []).length) return [window];
+
+    if (window.type === 'popup' && tabs.length === 0) {
+      outlinerWindowId = window.id ?? null;
+      return [];
+    }
+
+    return [{ ...window, tabs }];
+  });
+
   const nodesToSave: BaseNode[] = [];
+  const nodesToRemove = new Set<string>();
   const now = Date.now();
 
   const activeWindowIds = new Set(windows.map(w => w.id));
@@ -310,8 +337,23 @@ async function reconcileTabs() {
     }
   });
 
-  const winByBrowserId = new Map(existingNodes.filter(n => n.type === 'window' && n.browserWindowId).map(n => [n.browserWindowId, n]));
-  const tabByBrowserId = new Map(existingNodes.filter(n => n.type === 'tab' && n.browserTabId).map(n => [n.browserTabId, n]));
+  const winByBrowserId = new Map<number | undefined, BaseNode>();
+  const tabByBrowserId = new Map<number | undefined, BaseNode>();
+
+  for (const node of existingNodes) {
+    if (node.status !== 'open') continue;
+
+    const browserId = node.type === 'window' ? node.browserWindowId : node.type === 'tab' ? node.browserTabId : undefined;
+    if (!browserId) continue;
+
+    const browserMap = node.type === 'window' ? winByBrowserId : tabByBrowserId;
+    const existing = browserMap.get(browserId);
+    if (existing) {
+      nodesToRemove.add(node.id);
+    } else {
+      browserMap.set(browserId, node);
+    }
+  }
 
   // --- PASS 2: Heuristic Fallback Matching (for Chrome Restarts / Snapshot Restores) ---
   const fallbackDbWindows = existingNodes.filter(n => n.type === 'window' && n.status === 'open' && (!n.browserWindowId || !activeWindowIds.has(n.browserWindowId)));
@@ -327,8 +369,6 @@ async function reconcileTabs() {
   };
 
   for (const w of windows) {
-      if (w.id === outlinerWindowId) continue;
-      
       let winNode = winByBrowserId.get(w.id);
       if (!winNode) {
           // Heuristic Window Match
@@ -388,11 +428,33 @@ async function reconcileTabs() {
   }
   // --- END PASS 2 ---
 
-  const nodesToRemove = new Set<string>();
-  
+  // Remove missing tabs first so an absent window can be deleted in the same pass
+  // when its final tab disappears.
   for (const node of existingNodes) {
-    if (node.status === "open") {
-      if (node.type === "window" && node.browserWindowId && !activeWindowIds.has(node.browserWindowId)) {
+    if (
+      node.status === "open" &&
+      node.type === "tab" &&
+      node.browserTabId &&
+      !activeTabIds.has(node.browserTabId)
+    ) {
+      if (intentionallySavedNodes.has(node.id)) {
+        node.status = "saved";
+        node.active = false;
+        nodesToSave.push(node);
+        intentionallySavedNodes.delete(node.id);
+      } else {
+        nodesToRemove.add(node.id);
+      }
+    }
+  }
+
+  for (const node of existingNodes) {
+    if (
+      node.status === "open" &&
+      node.type === "window" &&
+      node.browserWindowId &&
+      !activeWindowIds.has(node.browserWindowId)
+    ) {
         if (intentionallySavedNodes.has(node.id)) {
           node.status = "saved";
           nodesToSave.push(node);
@@ -407,16 +469,6 @@ async function reconcileTabs() {
             nodesToSave.push(node);
           }
         }
-      } else if (node.type === "tab" && node.browserTabId && !activeTabIds.has(node.browserTabId)) {
-        if (intentionallySavedNodes.has(node.id)) {
-           node.status = "saved";
-           node.active = false;
-           nodesToSave.push(node);
-           intentionallySavedNodes.delete(node.id);
-        } else {
-           nodesToRemove.add(node.id);
-        }
-      }
     }
   }
 
@@ -424,8 +476,6 @@ async function reconcileTabs() {
   const reconciledWindowIds: string[] = [];
 
   for (const w of windows) {
-    if (w.id === outlinerWindowId) continue;
-
     let winNode = winByBrowserId.get(w.id);
     if (!winNode) {
       winNode = {
@@ -522,7 +572,7 @@ async function reconcileTabs() {
       id: "root",
       type: "workspace",
       parentId: null,
-      childIds: windows.filter(w => w.id !== outlinerWindowId).map(w => `win-${w.id}`),
+      childIds: windows.map(w => `win-${w.id}`),
       createdAt: now,
       updatedAt: now,
       sortOrder: 0

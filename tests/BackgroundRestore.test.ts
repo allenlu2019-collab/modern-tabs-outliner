@@ -89,4 +89,39 @@ describe('Background Restoration Logic', () => {
       expect.objectContaining({ id: 'tab-2', status: 'open', browserTabId: 11 })
     ]));
   });
+
+  it('restores a tab into a closed parent window without creating a default extra tab', async () => {
+    const mockNodes = [
+      { id: 'win-1', type: 'window', childIds: ['tab-1'], status: 'saved' },
+      { id: 'tab-1', type: 'tab', parentId: 'win-1', childIds: [], url: 'https://site1.com', status: 'saved' }
+    ];
+    (storage.getAllNodes as any).mockResolvedValue(mockNodes);
+    (global.chrome.windows.getAll as any).mockResolvedValue([]);
+    (global.chrome.windows.create as any).mockResolvedValue({
+      id: 500,
+      tabs: [{ id: 50, windowId: 500, url: 'https://site1.com' }]
+    });
+
+    await handleMessage({ type: 'RESTORE_NODE', nodeId: 'tab-1', url: 'https://site1.com' });
+
+    expect(chrome.windows.create).toHaveBeenCalledWith({
+      focused: true,
+      url: 'https://site1.com'
+    });
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+    expect(storage.putNode).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'tab-1', browserTabId: 50, browserWindowId: 500 })
+    );
+  });
+
+  it('does not open a Chrome window when an empty saved window is restored', async () => {
+    (storage.getAllNodes as any).mockResolvedValue([
+      { id: 'win-empty', type: 'window', childIds: [], status: 'saved' }
+    ]);
+
+    await handleMessage({ type: 'RESTORE_NODE', nodeId: 'win-empty' });
+
+    expect(chrome.windows.create).not.toHaveBeenCalled();
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
 });
