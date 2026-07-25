@@ -1,42 +1,85 @@
 # Modern Tabs Outliner
 
-## A. Spec
-Modern Tabs Outliner is a tree-based browser session manager extension. It allows users to organize their tabs and windows into a hierarchical tree structure, enabling efficient management, saving, and restoring of browser sessions. Key features include:
-- Visualizing tabs and windows as a tree.
-- Closing and saving tabs/windows to free up memory while retaining them in the tree.
-- Restoring saved tabs/windows seamlessly.
-- Drag-and-drop reorganization of the session tree.
+Modern Tabs Outliner is a Chrome and Edge Manifest V3 extension that combines
+live browser windows/tabs with saved tabs, saved windows, and virtual groups in
+one persistent tree.
 
-### UX Details & Advanced Features
+Current version: `1.0.15`
 
-#### Single Click Editing
-To streamline organization, the outliner features an intuitive "Single Click Editing" UI. Simply click on the title of any Window or Group to instantly transform it into an editable text field. Hit `Enter` to save, or `Escape` to cancel. This completely removes the friction of right-click context menus.
+## Current capabilities
 
-#### Snapshot Backup & Restore
-For peace of mind and strict session management, the outliner includes a Snapshot Backup system.
-- **Save**: Click the "💾 Backup & Restore" button to capture an instant, point-in-time snapshot of your entire tree hierarchy (including custom names, groups, and all open/saved tabs).
-- **Restore**: Easily view past snapshots, complete with a relative time indicator (e.g., `(2 hours ago)`). Restoring a backup safely overwrites the outliner state and instantly commands the background reconciler to sync your physical browser tabs against the retrieved snapshot.
+- One detached outliner popup, reused across extension-action clicks
+- Live browser-window and tab reconciliation
+- Open and saved items in one hierarchy
+- Close-save, remove, and selective restore
+- Drag/drop reordering and cross-window tab movement
+- User-created groups and inline window/group rename
+- Title/URL search and extraction of matches into a new window
+- Local IndexedDB snapshots
+- Validated JSON import/export with cross-device sanitization
+- Manual GitHub Contents API push/pull
+- Temporary autoplay suppression for restored HTTP(S) tabs
 
-#### Local JSON Backup & Import (Cross-Browser Portability)
-- **Export JSON**: Download a complete, full-fidelity JSON file representing your entire outliner workspace.
-- **Import JSON**: Restores a prior JSON backup. The system automatically creates a safety snapshot before overwriting, and **sanitizes** the imported data (converting `"open"` states to `"saved"` and stripping browser-session IDs) to ensure that backup files are fully portable across browser engines (e.g., Chrome to Edge) and device boundaries without reconciler conflicts.
+## Documentation
 
-#### GitHub Cloud Sync
-- **Cloud Backup**: Paste a GitHub Personal Access Token (PAT), target repository path (`owner/repo`), and custom backup file path in the settings.
-- **Push**: Instantly base64-encodes and commits your outliner tree hierarchy to your private/public GitHub repository.
-- **Pull**: Instantly pulls and restores your tree from GitHub, applying the same safety checks and portability sanitization. This enables seamless, secure cloud sync of your tabs and workspace across different computers.
+- [Product specification](tab-session-manager/spec.md)
+- [Technical architecture](tab-session-manager/architecture.md)
+- [Current UI reference](tab-session-manager/ui-wireframes.md)
+- [Implementation status and backlog](tab-session-manager/tasks.md)
+- [Domain language](CONTEXT.md)
+- [Playwright test plan](specs/modern-outliner-core-flows.md)
 
-## B. Architecture
-The technical design of this extension is divided into four main layers:
-1. **Background Service Worker**: Manages browser state, persistence, and coordinates events.
-2. **Popup UI**: The primary user interface for viewing and editing the session tree.
-3. **Storage Layer**: Persists the tree structure and settings using IndexedDB and `chrome.storage.local`.
-4. **Runtime Reconciliation**: Maps actual browser tabs and windows to internal tree node representations.
+## Technology
 
-For a comprehensive breakdown of the system diagram, data flow, message passing, and storage schema, please refer to the detailed architecture document:
-[Technical Architecture Document](tab-session-manager/architecture.md)
+- React 19
+- TypeScript 5.9
+- Vite 8
+- Chrome/Edge Manifest V3
+- IndexedDB and `chrome.storage.local`
+- `dnd-kit`
+- Vitest and Playwright
 
-## C. Tool and Environment
-- **Development Assistant**: Antigravity AI Assistant running on **Windows**.
-- **Package Management & Build Tooling**: Node.js and `npm` running inside a **WSL2** (Windows Subsystem for Linux) environment.
-- **Frameworks**: React, TypeScript, and Vite.
+## Development
+
+```powershell
+npm install
+npm test
+npm run build
+npm run test:e2e
+```
+
+`npm run build` creates `dist/`, builds self-contained `main.js` and
+`background.js` entry points, and verifies every referenced extension asset.
+
+## Load the unpacked extension
+
+1. Run `npm run build`.
+2. Open `chrome://extensions` or `edge://extensions`.
+3. Enable Developer mode.
+4. Choose **Load unpacked** and select this repository's `dist` directory.
+5. After each rebuild, select **Reload** on the extension card.
+
+Do not load the repository root or `public/`; the unpacked extension root is
+`dist/`.
+
+## Test coverage
+
+The unit/component suite covers storage, tree ordering, restore behavior,
+import validation, reconciliation, popup uniqueness, search, and UI actions.
+
+The Playwright suite covers the web UI flows and loads the compiled extension in
+Chromium to verify that its Manifest V3 service worker registers.
+
+## Current limitations
+
+- No Firefox support
+- No browser side-panel integration
+- No notes/todos/details pane
+- No automatic GitHub synchronization
+- No complete user-facing crashed/missing recovery workflow
+- No virtualized rendering for very large trees
+
+## Repository notes
+
+`dist/`, Playwright reports, and test results are generated artifacts and are not
+committed. Build the extension locally on each machine that loads it.

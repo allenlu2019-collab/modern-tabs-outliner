@@ -11,6 +11,7 @@ Modern Outliner is a React and TypeScript browser-extension UI for organizing ta
 - Tests run against the Vite app at `/` using the configured Playwright `baseURL`.
 - External side effects are not performed: GitHub push/pull is validated only for missing settings, and import is not tested with private user files.
 - Browser extension APIs may be absent in this web-app harness, so scenarios avoid flows that require real Chrome tabs or windows.
+- The compiled-extension scenario builds `dist` before the Playwright run.
 
 ## Test Scenarios
 
@@ -133,3 +134,16 @@ Modern Outliner is a React and TypeScript browser-extension UI for organizing ta
 - `NEW GROUP` is still visible after reload.
 - The group still appears under `Current Session`.
 - The search input and primary session controls remain available after reload.
+
+### 6. Compiled Extension Integrity
+
+#### 6.1 Register Manifest V3 Service Worker
+
+**Steps:**
+1. Launch a persistent Chromium context.
+2. Load `dist` as an unpacked extension.
+3. Observe registered service workers.
+
+**Expected Results:**
+- The extension registers a service worker whose URL ends in `/background.js`.
+- Registration does not depend on a missing shared JavaScript chunk.

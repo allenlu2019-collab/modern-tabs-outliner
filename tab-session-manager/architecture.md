@@ -1,417 +1,342 @@
-# Technical Architecture
+# Modern Tabs Outliner Technical Architecture
 
-This document describes the technical design for the Tree-Based Browser Session Manager extension.
+Status: Current implementation baseline
+Applies to: Version 1.0.15
 
 ## Overview
 
-The extension consists of:
+Modern Tabs Outliner is a raw Manifest V3 extension built with React,
+TypeScript, Vite, IndexedDB, and `dnd-kit`. It is not a Plasmo application and
+does not use the browser side-panel API.
 
-1. **Background service worker** — manages browser state, persistence, and coordination
-2. **Popup UI / Side Panel** — main UI for viewing/editing the tree
-3. **Storage layer** — persists tree and settings
-4. **Runtime reconciliation** — maps browser tabs/windows to tree nodes
+The system has five runtime/build responsibilities:
+
+1. **Extension launcher** - opens or focuses one detached outliner popup.
+2. **Background service worker** - observes browser events and reconciles live
+   state with the persisted outline.
+3. **React popup UI** - renders and edits the outline.
+4. **Storage and transfer services** - persist nodes/snapshots and handle JSON
+   or GitHub transfer.
+5. **Build pipeline** - produces self-contained UI and service-worker bundles
+   and verifies distribution integrity.
 
 ## System diagram
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Browser Runtime                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
-│  │   Tabs API  │  │ Windows API │  │ Sessions API     │   │
-│  └─────────────┘  └─────────────┘  └──────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│               Background Service Worker                     │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Runtime Reconciler                                  │   │
-│  │  - Listens to tab/window events                      │   │
-│  │  - Maps runtime IDs ↔ node IDs                       │   │
-│  │  - Detects crashes/missing tabs                      │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Tree Manager                                        │   │
-│  │  - Node CRUD                                         │   │
-│  │  - Tree operations (move, reorder)                   │   │
-│  │  - Validation                                        │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Action Handler                                      │   │
-│  │  - Close-save tabs/windows                           │   │
-│  │  - Restore tabs/windows                              │   │
-│  │  - Bulk operations                                   │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Storage Manager                                     │   │
-│  │  - Persists tree to IndexedDB                        │   │
-│  │  - Settings to chrome.storage.local                  │   │
-│  │  - Backup/snapshot logic                             │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                    Message passing
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Popup UI                                 │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Tree View                                           │   │
-│  │  - Renders nodes                                     │   │
-│  │  - Drag-and-drop                                     │   │
-│  │  - Selection                                         │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Node Detached Details                               │   │
-│  │  - Edit metadata                                     │   │
-│  │  - Actions                                           │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Toolbar                                             │   │
-│  │  - Search                                            │   │
-│  │  - Export/import                                     │   │
-│  │  - Settings                                          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```text
+Chrome / Edge
+  tabs + windows events
+          |
+          v
+src/background.ts
+  initializeBackground()
+          |
+          v
+src/background-logic.ts
+  launcher | message handler | reconciler
+          |
+          +-------------------+
+          |                   |
+          v                   v
+src/storage.ts          chrome.tabs/windows
+  IndexedDB              physical operations
+          |
+          v
+src/App.tsx <---- TREE_UPDATED runtime message
+  React tree UI
+          |
+          +---- JSON import/export
+          +---- src/githubService.ts
 ```
 
-## Data flow
+## Source layout
 
-### 1. Initial load
-```
-Popup opens → Request tree from background → Storage loads tree → 
-Runtime reconciler updates open node status → Tree sent to popup → Render
-```
+| Path | Responsibility |
+| --- | --- |
+| `src/background.ts` | Service-worker entry point |
+| `src/background-logic.ts` | Launcher, messages, restore logic, reconciliation |
+| `src/App.tsx` | Tree rendering, user actions, drag/drop, backup UI |
+| `src/storage.ts` | IndexedDB nodes and snapshots |
+| `src/types.ts` | Persisted and hydrated node types |
+| `src/utils.ts` | Positional weave, restore index, ID generation |
+| `src/importValidation.ts` | Backup structure and relationship validation |
+| `src/githubService.ts` | GitHub Contents API push/pull |
+| `public/content.js` | Temporary autoplay suppression for restored HTTP(S) tabs |
+| `vite.config.ts` | Self-contained UI build |
+| `vite.background.config.ts` | Self-contained service-worker build |
+| `scripts/verify-dist.mjs` | Distribution reference and bundling checks |
 
-### 2. Close-save tab
-```
-User clicks "Close-save" → Popup sends action → Background captures tab metadata → 
-Close browser tab → Update node status to saved → Persist → Notify popup → UI updates
-```
+## Authority model
 
-### 3. Restore tab
-```
-User clicks "Restore" → Popup sends action → Background opens URL → 
-Capture new tab ID → Update node status to open → Persist → Notify popup → UI updates
-```
+The system deliberately uses split authority.
 
-### 4. Tree edit (drag-drop)
-```
-User drags node → Popup sends move action → Background validates → 
-Update tree structure → Persist → Notify popup → UI updates
-```
+### Browser runtime authority
 
-## Component details
+Chrome or Edge is authoritative for:
 
-### Background service worker
+- which tabs and browser windows physically exist;
+- runtime tab/window IDs;
+- active tab and physical tab order;
+- tab URL, title, favicon, and loading state.
 
-#### Runtime Reconciler
-- Listens to: `chrome.tabs.onCreated`, `onUpdated`, `onRemoved`, `onMoved`
-- Listens to: `chrome.windows.onCreated`, `onRemoved`, `onFocusChanged`
-- Maintains mapping: `browserTabId` ↔ `nodeId`
-- On startup: compares persisted "open" nodes with actual browser state, marks mismatches as crashed/missing
+### Outline authority
 
-#### Tree Manager
-- Maintains in-memory tree structure
-- Provides operations:
-  - `addNode(parentId, nodeData)`
-  - `removeNode(nodeId)`
-  - `moveNode(nodeId, newParentId, index)`
-  - `updateNode(nodeId, updates)`
-  - `getNode(nodeId)`
-  - `getSubtree(nodeId)`
-- Validates operations (no cycles, valid parent types)
+IndexedDB is authoritative for:
 
-#### Action Handler
-- `closeSaveTab(nodeId)`: captures metadata, closes tab, marks saved
-- `closeSaveWindow(nodeId)`: captures all child tabs, closes window
-- `restoreTab(nodeId)`: opens URL, captures new tab ID
-- `restoreWindow(nodeId)`: creates window, restores child tabs
-- `closeSaveAll()`: snapshot current session, close all non-essential tabs
+- stable node IDs;
+- saved tabs and saved windows;
+- groups and virtual nesting;
+- user-defined order around saved/group nodes;
+- snapshots.
 
-#### Storage Manager
-- **Primary storage**: IndexedDB for tree data (can be large)
-- **Settings**: `chrome.storage.local` for preferences
-- **Backups**: periodic snapshots in IndexedDB
-- **Export/import**: JSON serialization
+Reconciliation combines these sources. It must not replace saved organization
+with a flat copy of the browser.
 
-### Popup UI
+## Extension launcher
 
-#### Tree View
-- Virtualized list for performance
-- Drag-and-drop via `dnd-kit`
-- Keyboard navigation
-- Selection (single/multiple)
-- Collapse/expand
+`openOutlinerWindow()`:
 
-#### Node Details
-- Shows metadata for selected node
-- Edit title, tags, color
-- Action buttons (close-save, restore, delete, etc.)
+1. Resolves the extension URL for `index.html`.
+2. Searches populated browser windows for that URL.
+3. Focuses the existing Outliner Popup and activates its tab when found.
+4. Closes duplicate popup windows that contain only the outliner.
+5. Otherwise creates a 420 x 800 popup.
 
-#### Toolbar
-- Search input with real-time filtering
-- Export/import buttons
-- Settings button
-- "Close-save all" button
+The in-memory `outlinerWindowId` is an optimization, not the only identity
+source. URL discovery allows recovery after service-worker suspension.
 
-## Storage schema
+## Background service worker
 
-### IndexedDB database: `tab-session-manager`
+### Event inputs
 
-#### Stores:
-1. **nodes**
-   - key: `id`
-   - indexes: `parentId`, `type`, `status`
+Reconciliation is requested for:
 
-2. **snapshots**
-   - key: `timestamp`
-   - stores full tree JSON for backup
+- `tabs.onCreated`
+- `tabs.onRemoved`
+- `tabs.onUpdated`
+- `tabs.onActivated`
+- `tabs.onMoved`
+- `tabs.onAttached`
+- `tabs.onDetached`
+- `tabs.onReplaced`
+- `windows.onCreated`
+- `windows.onRemoved`
+- `windows.onFocusChanged`
+- extension installation/update initialization
 
-3. **settings**
-   - key: `name`
-   - stores UI preferences
+Requests are debounced for 250 ms. Only one reconciliation runs at a time; an
+event received during a run sets a pending flag for one subsequent run.
 
-### Node document structure
-```ts
+### Runtime messages
+
+| Message | Sender | Purpose |
+| --- | --- | --- |
+| `INTENTIONAL_SAVE` | UI | Preserve a node when its live tab/window disappears |
+| `RESTORE_NODE` | UI | Restore a tab, window, or group branch |
+| `TAB_MOVED_UI` | UI | Move a physical tab to match drag/drop |
+| `FORCE_RECONCILE` | UI | Request reconciliation after import/snapshot restore |
+| `TREE_UPDATED` | Background | Tell the UI to reload IndexedDB |
+
+Message handling is fire-and-forget; listeners do not claim an asynchronous
+response channel.
+
+## Reconciliation algorithm
+
+`reconcileTabs()` performs these stages:
+
+1. **Read browser state.** Query all populated windows.
+2. **Exclude outliner pages.** Remove the outliner tab and omit its empty popup
+   window.
+3. **Read persisted nodes.** Build ID and parent maps.
+4. **Deduplicate open mappings.** Keep one open node per browser window/tab ID
+   and mark duplicates for removal.
+5. **Fallback match after restart.**
+   - Score unmatched persisted windows by shared non-placeholder URLs.
+   - Match unmatched tabs by URL, preferring descendants of the matched window.
+6. **Process missing live objects.**
+   - Intentionally saved nodes become `saved`.
+   - Other missing tabs are removed.
+   - Empty missing windows are removed; windows with surviving children become
+     saved.
+7. **Create/update live nodes.** Persist current metadata and runtime IDs.
+8. **Positional weave.** Merge physical tab order with saved/group positions.
+9. **Repair integrity.**
+   - Ensure every non-root node has an existing parent.
+   - Ensure parents list their children.
+   - Remove child references that disagree with `parentId`.
+10. **Persist and broadcast.** Batch writes, remove marked nodes, then send
+    `TREE_UPDATED`.
+
+### Positional weave
+
+`positionalWeave()` treats live direct-window tabs as an ordered sequence while
+retaining non-live IDs, including groups and saved tabs, in their outline
+positions. This prevents reconciliation from flattening virtual organization.
+
+## Restore behavior
+
+### Restore one tab
+
+- Reuse an open ancestor browser window when possible.
+- Calculate the physical insertion index from preceding open outline nodes.
+- When the parent window is closed, create the new browser window with the
+  target URL directly, avoiding an extra default tab.
+
+### Restore a window or group
+
+- Recursively collect descendant tab nodes.
+- Restore into an open ancestor window for groups when available.
+- Otherwise create a new browser window with the URL array.
+- Empty branches do not create a browser window.
+
+### Autoplay protection
+
+HTTP(S) restore URLs receive an `outliner-paused` hash marker.
+`public/content.js` detects the marker, removes it from the address bar, and
+temporarily pauses audio/video until user interaction or a ten-second timeout.
+
+## UI architecture
+
+`App.tsx` loads flat nodes from IndexedDB, hydrates `children`, and sorts child
+objects using each parent's `childIds`.
+
+### UI state
+
+React component state holds:
+
+- hydrated tree data;
+- active drag item;
+- search query;
+- backup modal state and snapshot metadata;
+- GitHub settings and operation status.
+
+Persistent outline state is not held in a global React store. Mutations write to
+IndexedDB and trigger either a local `REFRESH_TREE` event or a background
+`TREE_UPDATED` message.
+
+### Drag/drop
+
+The UI uses `DndContext`, `SortableContext`, pointer and keyboard sensors.
+Hierarchy guards reject cycles and invalid parent types. After persistence,
+open descendant tabs are moved with `TAB_MOVED_UI`; a branch moved outside an
+open browser window is converted to saved state.
+
+## Storage
+
+Database: `tab-session-manager`
+Version: `2`
+
+### `nodes` store
+
+- Key path: `id`
+- Indexes: `parentId`, `type`, `status`
+- Contains the root workspace and all window, tab, group, or reserved separator
+  nodes.
+
+### `snapshots` store
+
+- Key path: `id` (creation timestamp)
+- Contains `createdAt`, `nodeCount`, and a full copy of nodes.
+
+### GitHub settings
+
+`gitToken`, `gitRepo`, and `gitPath` are stored in `chrome.storage.local`.
+The extension does not encrypt the token.
+
+## Backup and import
+
+The export wrapper is:
+
+```json
 {
-  id: string,
-  type: "workspace" | "window" | "tab" | "group" | "separator",
-  parentId: string | null,
-  childIds: string[],
-  title?: string,
-  createdAt: number,
-  updatedAt: number,
-  sortOrder: number,
-  collapsed?: boolean,
-  color?: string,
-  tags?: string[],
-  
-  // type-specific fields
-  status?: "open" | "saved" | "restoring" | "crashed" | "missing",
-  url?: string,
-  favIconUrl?: string,
-  browserTabId?: number,
-  browserWindowId?: number,
-  openerTabNodeId?: string,
-  pinned?: boolean,
-  audible?: boolean,
-  muted?: boolean,
-  incognito?: boolean
+  "version": 1,
+  "exportedAt": 0,
+  "nodeCount": 0,
+  "nodes": []
 }
 ```
 
-### chrome.storage.local
-```ts
-{
-  "settings": {
-    "autoParentNewTabs": true,
-    "restoreTarget": "same-window", // "same-window" | "new-window"
-    "theme": "light",
-    "backupInterval": 300000, // 5 minutes
-    "maxBackups": 10
-  },
-  "uiState": {
-    "expandedNodes": string[],
-    "selectedNode": string | null,
-    "searchQuery": ""
-  }
-}
-```
+Validation checks:
 
-## Message passing
+- wrapper or raw-array format;
+- required string IDs;
+- unique IDs;
+- supported node types;
+- root existence;
+- valid `parentId` and `childIds`;
+- bidirectional parent-child agreement.
 
-### Popup → Background
-```ts
-// Request tree
-{ type: "GET_TREE" }
+Import first creates a safety snapshot, clears the node store, converts open
+nodes to saved, removes runtime browser IDs, and writes the sanitized nodes.
 
-// Tree mutation
-{ 
-  type: "MOVE_NODE", 
-  payload: { nodeId: string, newParentId: string, index: number } 
-}
+## Build architecture
 
-// Action
-{ 
-  type: "CLOSE_SAVE_TAB", 
-  payload: { nodeId: string } 
-}
+The build is intentionally split into two Vite invocations:
 
-// Export/import
-{ 
-  type: "EXPORT_TREE" 
-}
-{ 
-  type: "IMPORT_TREE", 
-  payload: { treeJson: string } 
-}
-```
+1. `vite.config.ts` builds `index.html` and a self-contained `main.js`.
+2. `vite.background.config.ts` builds a self-contained `background.js` without
+   clearing the first build.
+3. `scripts/verify-dist.mjs` verifies that manifest/HTML references exist and
+   that both JavaScript entry files have no external static imports.
 
-### Background → Popup
-```ts
-// Tree update
-{ 
-  type: "TREE_UPDATED", 
-  payload: { tree: Tree } 
-}
+This avoids a service-worker registration failure when a hashed shared chunk is
+missing from an unpacked extension directory.
 
-// Action result
-{ 
-  type: "ACTION_COMPLETE", 
-  payload: { action: string, success: boolean, error?: string } 
-}
+## Testing
 
-// Runtime event
-{ 
-  type: "TAB_CLOSED_EXTERNALLY", 
-  payload: { nodeId: string } 
-}
-```
+### Unit/component tests
 
-## State management
+Vitest with Happy DOM covers:
 
-### Background
-- In-memory tree (loaded from storage)
-- Runtime ID mapping
-- Event listeners
+- positional weave and restore indices;
+- close-save, remove, and drag/drop behavior;
+- background restore behavior;
+- group restoration;
+- import validation and sanitization;
+- outliner popup uniqueness;
+- reconciliation deduplication and cleanup;
+- search and snapshot-backed UI behavior.
 
-### Popup
-- Local copy of tree (synced via messages)
-- UI state (selection, expanded nodes, search)
-- Optimistic updates for better UX
+### Browser tests
 
-## Performance considerations
+Playwright covers:
 
-### Large trees
-- Virtualize tree rendering
-- Lazy load subtrees if needed
-- Debounce storage writes
-- Batch updates
+- fresh shell and accessible controls;
+- snapshots and JSON download;
+- GitHub settings validation;
+- group creation, search, and persistence;
+- unpacked extension service-worker registration.
 
-### Storage
-- IndexedDB for large data
-- Compress JSON for backups
-- Limit backup count
+The local web harness does not provide real extension APIs for most UI tests.
+The service-worker registration test launches the compiled `dist` extension in
+a persistent Chromium context.
 
-### Memory
-- Background worker: keep only necessary data in memory
-- Popup: virtualize, don't keep full DOM for all nodes
+## Permissions and security
 
-## Security considerations
+Manifest permissions:
 
-### Permissions
-- `tabs`: needed to read/close/restore tabs
-- `windows`: needed to manage windows
-- `sessions`: needed for crash recovery
-- `storage`: needed for persistence
-- `downloads`: needed for export
+- `tabs`
+- `windows`
+- `storage`
 
-### Data privacy
-- All data stays local unless explicitly exported
-- No telemetry or analytics in V1
-- No cloud sync unless user opts in later
+Host permission:
 
-### URL restrictions
-- Cannot restore `chrome://`, `edge://`, extension pages
-- Gracefully handle these cases
+- `<all_urls>` for the autoplay-protection content script.
 
-## Error handling
+Risks and constraints:
 
-### Common errors
-1. **Tab close failed** — permission issue, show user
-2. **URL cannot be restored** — mark as unsupported
-3. **Storage full** — warn user, offer export
-4. **Browser API unavailable** — fallback where possible
+- GitHub PATs are locally stored but not encrypted by this extension.
+- Internal browser URLs may not be restorable.
+- Broad host permission should be revisited if autoplay protection changes.
+- Import replaces the current outline after confirmation; the safety snapshot
+  is the recovery mechanism.
 
-### Recovery
-- Regular backups
-- Validate tree on load
-- Repair corrupted nodes if possible
+## Known technical gaps
 
-## Testing strategy
-
-### Unit tests
-- Tree operations (add, remove, move)
-- Storage layer
-- Runtime reconciliation
-
-### Integration tests
-- Background + popup communication
-- Export/import
-- Close-save/restore flows
-
-### Manual testing
-- Chrome MV3
-- Edge MV3
-- Large tree performance
-- Crash/recovery scenarios
-
-## Deployment
-
-### Chrome Web Store
-- Package extension
-- Submit for review
-- Update process
-
-### Edge Add-ons
-- Same package, different store
-- May need minor adjustments
-
-### Development
-- Load unpacked extension
-- Hot reload for popup
-- Background worker reloads on change
-
-## Future extensibility
-
-### Plugin points
-1. **Export formats** — add HTML, Markdown, etc.
-2. **Cloud sync** — add providers (Drive, Dropbox, etc.)
-3. **AI features** — summarization, auto-tagging
-4. **Collaboration** — shared workspaces
-
-### Configuration
-- Settings page for all options
-- Theme system
-- Keyboard shortcut customization
-
-## Decision log
-
-### Framework choice: Plasmo
-- Pros: modern, React-based, good tooling
-- Cons: abstraction layer
-- Alternative: raw MV3 + React setup
-
-### Storage: IndexedDB + chrome.storage.local
-- IndexedDB for large tree data
-- chrome.storage.local for settings (simpler API)
-
-### UI: React + TypeScript
-- Standard for extensions
-- Good component ecosystem
-- Type safety
-
-### Drag-and-drop: dnd-kit
-- Modern, performant
-- Good accessibility
-- Tree support
-
-## Open technical questions
-
-1. **Virtualization library**: `react-virtuoso` vs `react-window`?
-2. **State synchronization**: optimistic updates vs wait-for-background?
-3. **Backup strategy**: incremental vs full snapshots?
-4. **Migration system**: how to handle schema changes?
-
-## References
-
-- Chrome Extensions MV3: https://developer.chrome.com/docs/extensions/mv3/
-- Edge Add-ons: https://docs.microsoft.com/en-us/microsoft-edge/extensions-chromium/
-- Plasmo: https://docs.plasmo.com/
-- dnd-kit: https://docs.dndkit.com/
+- No explicit schema-migration framework beyond IndexedDB version handling.
+- `crashed`, `missing`, and `restoring` are defined but not a complete
+  user-facing state machine.
+- URL fallback matching can be ambiguous when many tabs share one URL.
+- No virtualized tree for very large node counts.
+- Live drag/drop and close-save are not yet exercised end-to-end against a real
+  extension browser context.
+- Full lint currently includes pre-existing debt outside the packaging changes.

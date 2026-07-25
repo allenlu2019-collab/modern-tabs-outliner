@@ -1,451 +1,330 @@
-# Tree-Based Browser Session Manager
+# Modern Tabs Outliner Product Specification
 
-## Title
-Tree-Based Browser Session Manager for Chrome and Edge
+Status: Current implementation baseline
+Applies to: Version 1.0.15
+Browsers: Google Chrome and Microsoft Edge, Manifest V3
 
-## One-line summary
-A Chrome/Edge extension that helps users manage tab overload by organizing open tabs, saved sessions, and windows in a persistent tree, allowing them to close tabs without losing context and selectively restore them later.
+## Product summary
 
-## Problem statement
-Heavy browser users often accumulate too many tabs and windows. Existing browser tools either:
-- flatten sessions into lists,
-- make restore all-or-nothing,
-- lose the relationship between tabs,
-- lack easy access across displays,
-- or fail badly after crashes.
+Modern Tabs Outliner is a local-first browser extension for viewing live browser
+windows and tabs together with saved tabs, saved windows, and user-created groups
+in one persistent tree.
 
-Users need a system that preserves **context**, not just links.
+The extension runs in a detached popup window. It lets users close tabs without
+forgetting them, restore selected items later, reorganize tabs and groups, search
+the outline, and back up the workspace locally or through a user-selected GitHub
+repository.
 
-## Vision
-Turn browser sessions into a **structured, persistent workspace** where:
-- open and saved tabs coexist,
-- tabs can be closed without being forgotten,
-- context is preserved in a tree,
-- tree is accessible via a popup side panel,
-- crash recovery is selective and reliable.
+## Problem
 
-## Goals
-1. Provide a unified tree view of open and saved tabs/windows.
-2. Let users close-save tabs/windows in place without losing hierarchy.
-3. Support a detached popup sidebar layout that fits easily on the screen.
-4. Enable selective restore of tabs, windows, or branches.
-5. Persist state locally and recover gracefully after crashes.
-6. Work on both Chrome and Edge with a shared codebase.
+Heavy browser users accumulate more tabs than a flat tab strip can explain.
+Bookmarks preserve URLs but lose the relationship between windows, projects, and
+work in progress. Full-session restoration is often too coarse.
 
-## Non-goals (V1)
-1. Multi-user collaboration
-2. AI summarization or AI-assisted organization
-3. Firefox support
-4. Payments / premium gating
-5. Google Drive backup integration
+The product preserves browsing context while allowing the physical browser
+session to remain smaller.
 
-## Target users
+## Product principles
 
-### Primary user
-Power users with 50–500 open tabs who:
-- do research,
-- work across many projects,
-- want to reduce RAM/CPU usage,
-- need strong session continuity.
+1. **Preserve context.** Saved items retain their place in the outline.
+2. **Treat open and saved as one workspace.** A saved tab is inactive, not lost.
+3. **Restore selectively.** One tab, one window, or one branch can be restored.
+4. **Use explicit authority boundaries.**
+   - Chrome or Edge is authoritative for tabs and windows that are physically open.
+   - IndexedDB is authoritative for saved items and user-created organization.
+5. **Make destructive actions distinct.** Close-save preserves an item; Remove
+   deletes it from the outline.
+6. **Recover idempotently.** Repeated browser events must not create duplicate
+   open nodes.
+7. **Remain local-first.** Data leaves the device only through an explicit export
+   or GitHub push.
 
-### Secondary user
-Knowledge workers who want:
-- project-based tab organization,
-- a permanent popup UI,
-- structured browsing memory.
+## Domain model
 
-## Core product principles
-1. **Context is everything** — a tab should retain its place in the tree.
-2. **Open and saved should feel continuous** — saved tabs are not “gone,” just inactive.
-3. **Selective restore beats full restore**.
-4. **The tree is the source of truth**.
-5. **UI must be non-intrusive yet always accessible**.
-6. **Closing tabs should feel safe**.
+The canonical terminology is maintained in
+[`../CONTEXT.md`](../CONTEXT.md).
 
-# Core features
+The workspace is stored as flat nodes with stable IDs and bidirectional
+parent-child references:
 
-## 1. Unified tree view
-Display:
-- open windows
-- open tabs
-- saved windows
-- saved tabs
-- groups
-
-All in one editable hierarchy.
-
-### Acceptance criteria
-- User can see both open and saved items in one tree.
-- Item type/status is visually distinguishable.
-- Tree supports collapse/expand.
-
-## 2. Close-save tab/window
-Allow user to close an open tab or window while preserving it in place in the tree.
-
-### Acceptance criteria
-- Closing a tab marks it saved and removes the live browser tab.
-- Closing a window saves all contained tabs.
-- Node location in tree does not change.
-- Node metadata is preserved.
-
-## 3. Restore tab/window/branch
-Allow selective reopen of:
-- one tab
-- one window
-- one subtree/branch
-
-### Acceptance criteria
-- Restore action recreates missing tabs in browser.
-- Restored nodes become active/open state.
-- Restore does not require reopening everything.
-
-## 4. Tree editing
-Support:
-- drag-and-drop reordering
-- nesting
-- grouping
-- manual labels/groups
-- collapse/expand
-
-### Acceptance criteria
-- Any node can be moved under another valid parent.
-- Order persists across reloads.
-- Drag/drop works with mouse and keyboard fallback later.
-
-## 6. Crash/session recovery
-If browser restarts or crashes:
-- identify previously open tabs/windows that are no longer alive
-- mark them as recoverable
-- allow selective reopen
-
-### Acceptance criteria
-- Open nodes missing at restart are marked appropriately.
-- User can restore one branch/window/tab without restoring all.
-- Crash recovery doesn’t erase tree context.
-
-## 7. Search and filter
-Search tree by:
-- title
-- URL
-- tag/keyword (if tags added later)
-
-### Acceptance criteria
-- Search returns both open and saved items.
-- Results can focus/reveal matching node in tree.
-
-## 8. Export/import
-Provide:
-- JSON export/import for full fidelity.
-- Automatic portability sanitization: when importing a backup JSON, the status of open window/tab nodes is converted to `"saved"` and their browser-session-specific IDs are stripped. This prevents the background reconciler from deleting them upon import in a different browser session or computer.
-- Safety rollback: Automatically creates a safety database snapshot before overwriting the outliner tree during import.
-
-### Acceptance criteria
-- User can export full workspace to a local JSON file.
-- User can import a prior JSON backup to restore their tree.
-- Import sanitization handles cross-device/cross-browser tab sessions correctly without losing data.
-- Export/import preserves hierarchy and metadata.
-
-## 9. GitHub Cloud Sync
-Provide:
-- Automatic remote cloud sync of the session tree using the GitHub Contents API.
-- Secure credential management: personal access token (PAT), repository path (`owner/repo`), and custom backup file path are securely saved in local storage.
-- Push: base64-encodes the outliner database tree and commits/pushes it directly to GitHub.
-- Pull: pulls and validates the backup from GitHub, applying safety rollback snapshots and sanitization before importing.
-
-### Acceptance criteria
-- User can configure their GitHub PAT and backup repository.
-- User can push the local tree to GitHub.
-- User can pull the backup from GitHub on another machine to restore the outliner tree.
-
-# User flows
-
-## Flow 1 — First launch
-1. User installs extension.
-2. User opens the popup side panel.
-3. Extension scans current windows/tabs.
-4. Current browsing state is imported into root tree.
-5. User sees initial outline.
-
-### Success condition
-User immediately sees value without manual setup.
-
-## Flow 2 — Save noisy tabs without losing them
-1. User opens the popup panel.
-2. User selects several tabs or a window.
-3. User clicks “Close-save”.
-4. Extension persists metadata and closes live tabs.
-5. Tree still shows them in the same structure.
-
-### Success condition
-Browser becomes lighter, but context remains visible.
-
-## Flow 3 — Organize by project
-1. User creates a group node called “Project A”.
-2. User drags tabs and windows into it.
-3. User collapses the branch.
-
-### Success condition
-Research becomes structured and reviewable.
-
-## Flow 4 — Recover after crash
-1. Browser restarts.
-2. Extension loads saved tree.
-3. Runtime tab/window IDs are missing for previous open items.
-4. Extension marks affected items as crashed/recoverable.
-5. User restores only needed branches.
-
-### Success condition
-User avoids reopening hundreds of tabs at once.
-
-## Flow 5 — One-click clean slate
-1. User clicks “Close-save all”.
-2. Extension snapshots current session.
-3. All normal tabs/windows are closed.
-4. Popup panel remains open.
-5. User starts fresh while old work remains preserved.
-
-### Success condition
-Immediate decluttering with zero context loss.
-
-# Functional requirements
-
-## FR-1 Tree model
-The system must store all entities as tree nodes with stable IDs.
-
-## FR-2 Open/saved coexistence
-The UI must display open and saved entities in a unified tree.
-
-## FR-3 Close-save
-The system must support converting open tabs/windows into saved nodes without changing their position in the tree.
-
-## FR-4 Restore
-The system must restore a tab/window/branch on demand.
-
-## FR-5 Persistence
-All mutations must persist locally and survive browser restart.
-
-## FR-7 Recovery
-The system must detect missing previously-open tabs/windows and mark them recoverable.
-
-## FR-8 Reordering
-The system must support drag-and-drop reparenting and reordering.
-
-## FR-9 Search
-The system must support searching titles and URLs.
-
-## FR-10 Export/import
-The system must support full-tree JSON import/export.
-
-# Non-functional requirements
-
-## Performance
-- Must remain usable with 1,000+ nodes in tree.
-- Tree interactions should feel responsive under normal use.
-- Large trees may require virtualization.
-
-## Reliability
-- Must autosave on mutation.
-- Should avoid data loss on worker suspension or browser crash.
-- Restore actions should be idempotent where possible.
-
-## Compatibility
-- Chrome MV3
-- Edge MV3
-- Shared extension codebase
-
-## Privacy
-- Local-first in V1
-- No external sync by default
-- No user data leaves device unless explicitly exported
-
-# Data model
-
-## Node
 ```ts
-type NodeType =
-  | "workspace"
-  | "window"
-  | "tab"
-  | "group"
-  | "separator"
-
-type NodeStatus =
-  | "open"
-  | "saved"
-  | "restoring"
-  | "crashed"
-  | "missing"
-
-interface BaseNode {
-  id: string
-  type: NodeType
-  parentId: string | null
-  childIds: string[]
-  title?: string
-  createdAt: number
-  updatedAt: number
-  sortOrder: number
-  collapsed?: boolean
-  color?: string
-  tags?: string[]
-}
+type NodeType = "workspace" | "window" | "tab" | "group" | "separator";
+type NodeStatus = "open" | "saved" | "restoring" | "crashed" | "missing";
 ```
 
-## Tab node
-```ts
-interface TabNode extends BaseNode {
-  type: "tab"
-  status: NodeStatus
-  url: string
-  favIconUrl?: string
-  browserTabId?: number
-  browserWindowId?: number
-  openerTabNodeId?: string
-  pinned?: boolean
-  audible?: boolean
-  muted?: boolean
-}
-```
+The current UI and reconciler primarily produce and consume `open` and `saved`.
+The other status values are reserved by the schema and are not yet a complete
+user-facing recovery workflow.
 
-## Window node
-```ts
-interface WindowNode extends BaseNode {
-  type: "window"
-  status: NodeStatus
-  browserWindowId?: number
-  incognito?: boolean
-}
-```
+## Authority and lifecycle rules
 
-# Technical architecture
+### Live browser state
 
-## 1. Background service worker
-Responsibilities:
-- listen to `tabs` and `windows` events
-- reconcile runtime browser state with persisted tree
-- persist mutations
-- coordinate restore flows
-- schedule backups later
+- A live tab is identified by `browserTabId`.
+- A live browser window is identified by `browserWindowId`.
+- Browser IDs are session-scoped and are not portable across devices or browser
+  restarts.
+- Reconciliation reads populated browser windows and tabs, then updates open
+  nodes in IndexedDB.
+- The Modern Outliner popup and its tab are excluded from the represented
+  browser session.
 
-## 2. Popup Side Panel
-Responsibilities:
-- render tree in compact mode
-- handle drag/drop
-- interact with tree
-- search/filter
-- initiate actions
+### Saved outline state
 
-## 3. Storage layer
-Responsibilities:
-- local persistence abstraction
-- snapshotting
-- version migration
-- integrity checks
+- A saved tab or window remains in IndexedDB without requiring a live browser
+  object.
+- Closing through a close-save action registers intent before closing the live
+  tab, allowing reconciliation to preserve the node as `saved`.
+- Removing a node deletes that node and its descendants from IndexedDB. Any live
+  tabs in the removed subtree are also closed.
 
-## 4. Runtime reconciliation layer
-Responsibilities:
-- map browser runtime IDs to stable node IDs
-- detect missing/crashed nodes
-- handle tab/window movement changes
+### External browser changes
 
-# Suggested tech stack
+- Browser tab/window events are debounced and reconciled serially.
+- A tab closed outside the extension is removed unless it was registered as an
+  intentional save.
+- An absent empty window node is removed in the same reconciliation pass.
+- Open duplicate nodes that point to the same browser tab or window ID are
+  consolidated.
+- After a browser restart, URL-based fallback matching may reconnect persisted
+  open nodes to new runtime IDs.
 
-## Extension framework
-- **Plasmo** or raw MV3 extension setup
+## Implemented capabilities
 
-## UI
-- React
-- TypeScript
+### 1. Single detached outliner popup
 
-## State
-- Zustand / Redux Toolkit / TanStack Store
+The extension action opens a 420 x 800 detached popup.
 
-## Storage
-- `chrome.storage.local` for settings/light metadata
-- IndexedDB for larger tree/history state
+Acceptance criteria:
 
-## Drag-and-drop
-- `dnd-kit`
+- Activating the extension focuses an existing outliner popup when one exists.
+- The extension does not create multiple outliner-only popup windows.
+- Duplicate outliner-only popups are closed.
+- A normal browser window containing an outliner tab is not closed.
 
-## Search
-- simple local text index first
-- maybe MiniSearch later
+### 2. Unified tree
 
-# Permissions / browser APIs
-- `tabs`
-- `windows`
-- `storage`
-- `sessions`
-- `contextMenus`
-- `downloads`
-- `alarms`
-- optional later: `tabGroups`, `sidePanel`
+The tree displays browser windows, open tabs, saved tabs, saved windows, and
+groups.
 
-# Edge cases
+Acceptance criteria:
 
-## Tab already closed externally
-If user closes a tab outside the extension UI:
-- reconcile event
-- mark node saved/missing based on intent/context
+- Open and saved nodes can coexist under the same root.
+- Windows and groups can be expanded and collapsed.
+- Windows and groups can be renamed inline.
+- Clicking an open tab focuses its browser tab and window.
+- Clicking a saved tab restores it.
 
-## Restore collision
-If restoring a saved branch into an existing live session:
-- create new window or append to current configurable target
+### 3. Close-save and remove
 
-## Browser restart mismatch
-Persisted nodes marked open but runtime tabs gone:
-- mark as crashed/recoverable
+Close-save and Remove are separate commands.
 
-## URL restricted pages
-Some internal browser pages may not restore normally.
-Need graceful handling for:
-- `chrome://`
-- `edge://`
-- extension pages
-- restricted pages
+Acceptance criteria:
 
-# V1 milestone plan
+- Close-save closes the physical tab while preserving the outline node.
+- Closing a branch preserves its open descendants as saved nodes.
+- Remove deletes the selected subtree and closes live tabs in that subtree.
+- Removing the final child does not leave an empty live window item.
 
-## Milestone 1 — Core tree + persistence
-- create node model
-- import current tabs/windows
-- render tree
-- persist locally
+### 4. Selective restore
 
-## Milestone 2 — Save/restore
-- close-save tab
-- close-save window
-- restore tab/window
-- visual states
+Users can restore a saved tab, window, or group branch.
 
-## Milestone 3 — Organization
-- drag/drop
-- group nodes
+Acceptance criteria:
 
-## Milestone 4 — Recovery + export
-- crash detection
-- recoverable state UI
-- JSON export/import
-- search
+- A saved tab restores into its open ancestor window when possible.
+- If its parent window is closed, the restored tab is used to create the new
+  window directly; no extra default tab is created.
+- Restoring a window or group restores nested child tabs.
+- Empty saved windows do not create a blank browser window.
+- Restored HTTP(S) tabs receive temporary autoplay protection until interaction
+  or timeout.
 
-# Open questions
-1. Should tabs automatically become children of opener tabs by default or be optional?
-2. Should the popup side panel remain floating, or anchor to the side of the browser?
-3. What is the best restore target behavior for branches?
-4. Do we need snapshot history in V1 or only current-state persistence?
+### 5. Drag-and-drop organization
 
-# Recommended V1 decisions
-- Default UI: **Detached Popup Side Panel**
-- Restore target: **same window when possible, else new window**
-- Parent-child opener behavior: **optional setting, default on**
-- Backups: **manual JSON export in V1**
+The tree uses `dnd-kit` for reordering and reparenting.
 
-# Acceptance definition for V1
-V1 is successful if a user can:
-1. install the extension,
-2. see all current tabs/windows in a tree,
-3. create groups,
-4. close-save tabs/windows,
-5. reopen only selected items later,
-6. restart/crash browser and recover selectively,
-7. export/import the workspace.
+Acceptance criteria:
+
+- Windows remain root-level nodes.
+- Tabs can be children of windows or groups.
+- Cycles are rejected.
+- Moving open tabs under an open window moves the physical browser tabs.
+- Moving open tabs outside any open browser window converts them to saved tabs
+  and closes the physical tabs.
+- An old browser window is removed when a cross-window move leaves it empty.
+
+### 6. Search and extraction
+
+Search matches node titles and tab URLs.
+
+Acceptance criteria:
+
+- Matching ancestors remain visible so results retain context.
+- Search expands matching branches.
+- The search field supports `Ctrl+F` and `Cmd+F`.
+- Matching tabs can be extracted into a new browser window.
+- Open matches are recreated in the new window; saved matches remain saved.
+
+### 7. Local snapshots
+
+Snapshots capture the complete node collection in a separate IndexedDB store.
+
+Acceptance criteria:
+
+- Users can create, list, restore, and delete snapshots.
+- Snapshot metadata includes creation time and node count.
+- Restoring a snapshot replaces the current node store and requests
+  reconciliation.
+
+### 8. JSON import and export
+
+Acceptance criteria:
+
+- Export downloads a versioned JSON object containing all nodes.
+- Import accepts the wrapper format or a raw node array.
+- Import validates node types, unique IDs, root existence, and bidirectional
+  parent-child references.
+- Import creates a safety snapshot before replacing the node store.
+- Imported open nodes become saved and browser runtime IDs are removed.
+
+### 9. Manual GitHub synchronization
+
+Users can manually push or pull the same JSON backup format through the GitHub
+Contents API.
+
+Acceptance criteria:
+
+- The user supplies a personal access token, `owner/repository`, and file path.
+- Push creates or updates the selected file.
+- Pull validates and sanitizes data before import.
+- Pull creates the same pre-import safety snapshot as local import.
+- Credentials are stored in `chrome.storage.local`; they are not encrypted by
+  the extension.
+- No automatic background synchronization occurs.
+
+### 10. Build and extension integrity
+
+Acceptance criteria:
+
+- The MV3 background service worker is emitted as self-contained
+  `dist/background.js`.
+- The UI JavaScript is emitted as self-contained `dist/main.js`.
+- The build fails when the manifest or HTML references a missing distribution
+  asset.
+- Playwright loads the unpacked build and verifies service-worker registration.
+
+## User flows
+
+### First use
+
+1. Build or install the extension.
+2. Activate the extension action.
+3. The background worker reconciles current browser windows and tabs.
+4. The detached popup shows the current outline.
+
+Success: current browser state appears without manual import.
+
+### Save a tab
+
+1. Select Close on an open tab.
+2. The UI registers an intentional save.
+3. The browser tab closes.
+4. Reconciliation marks the existing node saved in the same location.
+
+Success: browser memory is released without losing the tab's context.
+
+### Restore a branch
+
+1. Select Restore on a saved window or group.
+2. The background worker gathers nested saved tabs.
+3. Tabs are opened in an existing suitable window or a new browser window.
+4. New runtime IDs are persisted.
+
+Success: only the selected branch returns to the live browser session.
+
+### Move work between windows
+
+1. Drag a tab or group into another open window node.
+2. The outline hierarchy is persisted.
+3. Open descendant tabs are moved to the target physical browser window in
+   outline order.
+
+Success: the browser and outline converge on the same organization.
+
+### Portable restore
+
+1. Export locally or push to GitHub.
+2. Import or pull on another browser/device.
+3. Validation and sanitization convert runtime-specific open nodes to saved.
+4. Restore selected items when needed.
+
+Success: hierarchy transfers without reusing stale browser IDs.
+
+## Non-functional requirements
+
+### Reliability
+
+- Reconciliation must be serialized and safe under repeated browser events.
+- Reconciliation must not represent the outliner popup as user browsing state.
+- Parent-child references must remain bidirectionally consistent.
+- Duplicate open browser IDs must not produce duplicate outline entries.
+- Build output must not depend on missing hashed JavaScript chunks.
+
+### Compatibility
+
+- Google Chrome with Manifest V3.
+- Microsoft Edge with Manifest V3.
+- Windows and macOS are supported development/use environments.
+- Firefox is not currently supported.
+
+### Performance
+
+- Browser events are debounced by 250 ms.
+- IndexedDB connections are reused.
+- Reconciliation batches node writes where practical.
+- The current recursive UI is expected to remain responsive for ordinary
+  sessions; virtualization for very large trees is not implemented.
+
+### Privacy and security
+
+- Outline data and snapshots are stored locally in IndexedDB.
+- GitHub settings are stored locally in extension storage.
+- GitHub transfer occurs only after an explicit Push or Pull action.
+- The extension requests `tabs`, `windows`, and `storage`, plus host access used
+  by the restored-tab autoplay content script.
+
+## Explicitly not implemented
+
+- Browser side-panel integration.
+- Firefox support.
+- Notes, todos, separators, tags, or a details pane in the UI.
+- Context menus and bulk multi-selection.
+- An options/settings page.
+- Automatic scheduled backups or automatic GitHub sync.
+- A complete user-facing crashed/missing recovery state.
+- Tree virtualization.
+- Chrome Web Store or Edge Add-ons release automation.
+
+## Current test contract
+
+The automated suite covers:
+
+- tree ordering and restore-index utilities;
+- close-save, remove, restore, and drag/drop interactions;
+- import validation and portability sanitization;
+- outliner popup uniqueness;
+- reconciliation deduplication, empty-window cleanup, and popup exclusion;
+- search, snapshots, GitHub-settings validation, and page persistence;
+- distribution integrity and real MV3 service-worker registration.
+
+See [`../specs/modern-outliner-core-flows.md`](../specs/modern-outliner-core-flows.md)
+and [`architecture.md`](architecture.md).
+
+## Prioritized future work
+
+1. Define and implement explicit crash/restart recovery semantics.
+2. Add extension-level E2E coverage for live tab movement and close-save flows.
+3. Add schema migrations beyond IndexedDB version 2.
+4. Add large-tree performance measurements and virtualization if required.
+5. Reduce broad host permissions if autoplay protection can be redesigned.

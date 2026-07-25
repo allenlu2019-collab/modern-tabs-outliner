@@ -1,18 +1,18 @@
-# Tab Session Manager (Modern Tabs Outliner)
+# Modern Tabs Outliner Documentation
 
-This directory contains planning and architecture documentation for the tree-based browser session manager extension (Modern Tabs Outliner).
+These documents describe the current product and implementation.
 
-## Documentation Files
-* [Product Specification](spec.md) — Product specification, acceptance criteria, and roadmap.
-* [Technical Architecture](architecture.md) — Technical design, data models, message passing, and database schemas.
-* [UI & UX Wireframes](ui-wireframes.md) — Wireframes and UI interactions.
-* [Tasks](tasks.md) — Implementation breakdown and checklists.
+- [Product specification](spec.md) - shipped behavior, acceptance criteria,
+  authority rules, limitations, and future priorities
+- [Technical architecture](architecture.md) - runtime components, storage,
+  reconciliation, build pipeline, permissions, and testing
+- [Current UI reference](ui-wireframes.md) - the interface that exists today
+- [Implementation status and backlog](tasks.md) - completed work, test contract,
+  and prioritized gaps
+- [Domain language](../CONTEXT.md) - canonical product terminology
+- [Playwright test plan](../specs/modern-outliner-core-flows.md) - browser-level
+  automated scenarios
 
-## Features Implemented
-The extension is fully implemented and operational on both Google Chrome and Microsoft Edge. Key completed capabilities include:
-1. **Unified Outliner Tree View**: Coexistence of open and saved windows/tabs/groups.
-2. **Single-Click Title Editing**: Click on any group or window to rename it instantly.
-3. **Automatic Background Reconciliation**: A robust reconciler automatically links your browser window session to the database, ensuring zero data loss on crashes or restarts.
-4. **Local Snapshot Backups**: One-click point-in-time snapshot creation with automatic safety snapshots before destructive imports.
-5. **Local JSON Import/Export**: Full outliner tree import and export supporting cross-browser portability sanitization.
-6. **GitHub Cloud Sync**: Integration with the GitHub Contents API to backup and synchronize your outliner tree across devices and browser engines securely.
+The previous documents mixed early design ideas with implemented behavior. As of
+version `1.0.15`, planned features are explicitly separated from shipped
+capabilities.
