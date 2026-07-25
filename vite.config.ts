@@ -13,13 +13,11 @@ export default defineConfig({
   },
   plugins: [react()],
   build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        background: resolve(__dirname, 'src/background.ts')
-      },
+    rolldownOptions: {
+      input: resolve(__dirname, 'index.html'),
       output: {
-        entryFileNames: '[name].js'
+        codeSplitting: false,
+        entryFileNames: 'main.js'
       }
     }
   }
