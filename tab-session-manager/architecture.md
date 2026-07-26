@@ -1,7 +1,7 @@
 # Modern Tabs Outliner Technical Architecture
 
 Status: Current implementation baseline
-Applies to: Version 1.0.15
+Applies to: Version 1.0.16
 
 ## Overview
 
@@ -143,7 +143,8 @@ response channel.
 
 `reconcileTabs()` performs these stages:
 
-1. **Read browser state.** Query all populated windows.
+1. **Read browser state.** Query all populated windows and ignore transient
+   zero-tab results.
 2. **Exclude outliner pages.** Remove the outliner tab and omit its empty popup
    window.
 3. **Read persisted nodes.** Build ID and parent maps.
@@ -159,7 +160,9 @@ response channel.
      saved.
 7. **Create/update live nodes.** Persist current metadata and runtime IDs.
 8. **Positional weave.** Merge physical tab order with saved/group positions.
-9. **Repair integrity.**
+9. **Prune empty windows and repair integrity.**
+   - Remove persisted window nodes with no valid surviving children, including
+     empty saved nodes restored from snapshots.
    - Ensure every non-root node has an existing parent.
    - Ensure parents list their children.
    - Remove child references that disagree with `parentId`.

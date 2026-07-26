@@ -309,13 +309,17 @@ export async function reconcileTabs() {
 
   const outlinerUrl = chrome.runtime.getURL('index.html');
   windows = windows.flatMap((window) => {
-    const tabs = (window.tabs || []).filter((tab) => !isOutlinerUrl(tab.url, outlinerUrl));
-    if (tabs.length === (window.tabs || []).length) return [window];
+    const browserTabs = window.tabs || [];
+    const tabs = browserTabs.filter((tab) => !isOutlinerUrl(tab.url, outlinerUrl));
 
-    if (window.type === 'popup' && tabs.length === 0) {
-      outlinerWindowId = window.id ?? null;
+    if (tabs.length === 0) {
+      if (window.type === 'popup' && browserTabs.length > 0) {
+        outlinerWindowId = window.id ?? null;
+      }
       return [];
     }
+
+    if (tabs.length === browserTabs.length) return [window];
 
     return [{ ...window, tabs }];
   });
@@ -555,6 +559,19 @@ export async function reconcileTabs() {
     winNode.childIds = positionalWeave(winNode.childIds || [], tabsInThisWindow, nodesToRemove);
     nodesToSave.push(winNode);
 
+  }
+
+  const reconciledWindowIdSet = new Set(reconciledWindowIds);
+  for (const node of existingNodes) {
+    if (node.type !== 'window' || reconciledWindowIdSet.has(node.id)) continue;
+
+    const hasValidChildren = (node.childIds || []).some((childId) => {
+      const child = nodeMap.get(childId);
+      return child?.parentId === node.id && !nodesToRemove.has(childId);
+    });
+    if (!hasValidChildren) {
+      nodesToRemove.add(node.id);
+    }
   }
 
   const rootNode = nodeMap.get("root");

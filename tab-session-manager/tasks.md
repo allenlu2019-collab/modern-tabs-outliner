@@ -1,6 +1,6 @@
 # Modern Tabs Outliner Implementation Status
 
-Status: Version 1.0.15
+Status: Version 1.0.16
 
 This is a status and backlog document, not a speculative file layout. Completed
 items refer to behavior present in the current source and automated tests.
@@ -40,6 +40,7 @@ items refer to behavior present in the current source and automated tests.
 - [x] URL fallback matching after restart
 - [x] Duplicate open-ID cleanup
 - [x] Same-pass missing-tab and empty-window cleanup
+- [x] Restored empty saved-window and transient zero-tab cleanup
 - [x] Positional weave preserving groups and saved items
 - [x] Background-to-UI update broadcast
 

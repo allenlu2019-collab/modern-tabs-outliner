@@ -87,6 +87,45 @@ describe('Browser state reconciliation', () => {
     );
   });
 
+  it('removes an empty saved window restored from a snapshot', async () => {
+    vi.mocked(chrome.windows.getAll).mockResolvedValue([]);
+    vi.mocked(storage.getAllNodes).mockResolvedValue([
+      root(['win-empty']),
+      {
+        id: 'win-empty',
+        type: 'window',
+        parentId: 'root',
+        childIds: [],
+        status: 'saved',
+        createdAt: 0,
+        updatedAt: 0,
+        sortOrder: 0,
+      },
+    ]);
+
+    await reconcileTabs();
+
+    expect(storage.removeNode).toHaveBeenCalledWith('win-empty');
+    expect(storage.putNodes).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'root', childIds: [] })]),
+    );
+  });
+
+  it('does not create a Window Node for a transient zero-tab Browser Window', async () => {
+    vi.mocked(chrome.windows.getAll).mockResolvedValue([
+      { id: 100, type: 'normal', tabs: [] },
+    ] as chrome.windows.Window[]);
+    vi.mocked(storage.getAllNodes).mockResolvedValue([root([])]);
+
+    await reconcileTabs();
+
+    const savedNodes = vi.mocked(storage.putNodes).mock.calls.flatMap(([nodes]) => nodes);
+    expect(savedNodes).not.toContainEqual(expect.objectContaining({ type: 'window' }));
+    expect(savedNodes).not.toContainEqual(
+      expect.objectContaining({ id: 'root', childIds: expect.arrayContaining(['win-100']) }),
+    );
+  });
+
   it('removes duplicate nodes linked to the same browser window and tab', async () => {
     vi.mocked(chrome.windows.getAll).mockResolvedValue([
       {

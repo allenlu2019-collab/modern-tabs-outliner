@@ -1,7 +1,7 @@
 # Modern Tabs Outliner Product Specification
 
 Status: Current implementation baseline
-Applies to: Version 1.0.15
+Applies to: Version 1.0.16
 Browsers: Google Chrome and Microsoft Edge, Manifest V3
 
 ## Product summary
@@ -83,7 +83,10 @@ user-facing recovery workflow.
 - Browser tab/window events are debounced and reconciled serially.
 - A tab closed outside the extension is removed unless it was registered as an
   intentional save.
-- An absent empty window node is removed in the same reconciliation pass.
+- A window node with no valid children is removed in the same reconciliation
+  pass, including an empty saved node restored from a snapshot.
+- A transient browser window reporting zero tabs does not create an empty
+  window node.
 - Open duplicate nodes that point to the same browser tab or window ID are
   consolidated.
 - After a browser restart, URL-based fallback matching may reconnect persisted
