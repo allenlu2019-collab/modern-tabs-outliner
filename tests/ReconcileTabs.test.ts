@@ -126,6 +126,66 @@ describe('Browser state reconciliation', () => {
     );
   });
 
+  it('preserves unmatched open tabs as saved during snapshot restoration', async () => {
+    vi.mocked(chrome.windows.getAll).mockResolvedValue([
+      {
+        id: 100,
+        type: 'normal',
+        tabs: [{ id: 10, windowId: 100, url: 'https://active.example', title: 'Active', index: 0 }],
+      },
+    ] as chrome.windows.Window[]);
+    vi.mocked(storage.getAllNodes).mockResolvedValue([
+      root(['win-old']),
+      {
+        id: 'win-old',
+        type: 'window',
+        parentId: 'root',
+        childIds: ['tab-active', 'tab-saved-after-restore'],
+        browserWindowId: 900,
+        status: 'open',
+        createdAt: 0,
+        updatedAt: 0,
+        sortOrder: 0,
+      },
+      {
+        id: 'tab-active',
+        type: 'tab',
+        parentId: 'win-old',
+        childIds: [],
+        url: 'https://active.example',
+        browserTabId: 90,
+        browserWindowId: 900,
+        status: 'open',
+        createdAt: 0,
+        updatedAt: 0,
+        sortOrder: 0,
+      },
+      {
+        id: 'tab-saved-after-restore',
+        type: 'tab',
+        parentId: 'win-old',
+        childIds: [],
+        url: 'https://saved.example',
+        browserTabId: 91,
+        browserWindowId: 900,
+        status: 'open',
+        active: true,
+        createdAt: 0,
+        updatedAt: 0,
+        sortOrder: 1,
+      },
+    ]);
+
+    await reconcileTabs({ preserveMissingOpenNodes: true });
+
+    expect(storage.removeNode).not.toHaveBeenCalled();
+    const savedNodes = vi.mocked(storage.putNodes).mock.calls.flatMap(([nodes]) => nodes);
+    const preservedTab = savedNodes.find((node) => node.id === 'tab-saved-after-restore');
+    expect(preservedTab).toMatchObject({ status: 'saved', active: false });
+    expect(preservedTab).not.toHaveProperty('browserTabId');
+    expect(preservedTab).not.toHaveProperty('browserWindowId');
+  });
+
   it('removes duplicate nodes linked to the same browser window and tab', async () => {
     vi.mocked(chrome.windows.getAll).mockResolvedValue([
       {

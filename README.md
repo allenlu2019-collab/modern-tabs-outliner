@@ -4,7 +4,7 @@ Modern Tabs Outliner is a Chrome and Edge Manifest V3 extension that combines
 live browser windows/tabs with saved tabs, saved windows, and virtual groups in
 one persistent tree.
 
-Current version: `1.0.16`
+Current version: `1.0.17`
 
 ## Current capabilities
 

@@ -1,6 +1,6 @@
 # Modern Tabs Outliner Implementation Status
 
-Status: Version 1.0.16
+Status: Version 1.0.17
 
 This is a status and backlog document, not a speculative file layout. Completed
 items refer to behavior present in the current source and automated tests.
@@ -67,6 +67,7 @@ items refer to behavior present in the current source and automated tests.
 ### Backup and transfer
 
 - [x] Create/list/restore/delete local snapshots
+- [x] Preserve unmatched tabs when restoring a snapshot after browser restart
 - [x] JSON export
 - [x] Structural import validation
 - [x] Safety snapshot before import

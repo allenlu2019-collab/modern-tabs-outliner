@@ -1,7 +1,7 @@
 # Modern Tabs Outliner Product Specification
 
 Status: Current implementation baseline
-Applies to: Version 1.0.16
+Applies to: Version 1.0.17
 Browsers: Google Chrome and Microsoft Edge, Manifest V3
 
 ## Product summary
@@ -178,7 +178,9 @@ Acceptance criteria:
 - Users can create, list, restore, and delete snapshots.
 - Snapshot metadata includes creation time and node count.
 - Restoring a snapshot replaces the current node store and requests
-  reconciliation.
+  restore-aware reconciliation.
+- After a browser restart, live tabs are reconnected where possible and
+  unmatched snapshot tabs remain in the outline as saved tabs.
 
 ### 8. JSON import and export
 

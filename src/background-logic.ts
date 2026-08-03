@@ -6,6 +6,10 @@ let outlinerWindowId: number | null = null;
 let pauseReconcile = false;
 const intentionallySavedNodes = new Set<string>();
 
+type ReconcileOptions = {
+  preserveMissingOpenNodes?: boolean;
+};
+
 type OutlinerWindowMatch = {
   window: chrome.windows.Window;
   outlinerTabs: chrome.tabs.Tab[];
@@ -257,7 +261,7 @@ export async function handleMessage(msg: any) {
   }
 
   if (msg.type === "FORCE_RECONCILE") {
-    requestReconcile();
+    requestReconcile({ preserveMissingOpenNodes: msg.preserveMissingOpenNodes === true });
     return;
   }
 }
@@ -281,17 +285,17 @@ export function initializeBackground() {
     await reconcileTabs();
   });
 
-  chrome.tabs.onCreated.addListener(requestReconcile);
-  chrome.tabs.onRemoved.addListener(requestReconcile);
-  chrome.tabs.onUpdated.addListener(requestReconcile);
-  chrome.tabs.onActivated.addListener(requestReconcile);
-  chrome.tabs.onMoved.addListener(requestReconcile);
-  chrome.tabs.onAttached.addListener(requestReconcile);
-  chrome.tabs.onDetached.addListener(requestReconcile);
-  chrome.tabs.onReplaced.addListener(requestReconcile);
-  chrome.windows.onCreated.addListener(requestReconcile);
-  chrome.windows.onRemoved.addListener(requestReconcile);
-  chrome.windows.onFocusChanged.addListener(requestReconcile);
+  chrome.tabs.onCreated.addListener(() => requestReconcile());
+  chrome.tabs.onRemoved.addListener(() => requestReconcile());
+  chrome.tabs.onUpdated.addListener(() => requestReconcile());
+  chrome.tabs.onActivated.addListener(() => requestReconcile());
+  chrome.tabs.onMoved.addListener(() => requestReconcile());
+  chrome.tabs.onAttached.addListener(() => requestReconcile());
+  chrome.tabs.onDetached.addListener(() => requestReconcile());
+  chrome.tabs.onReplaced.addListener(() => requestReconcile());
+  chrome.windows.onCreated.addListener(() => requestReconcile());
+  chrome.windows.onRemoved.addListener(() => requestReconcile());
+  chrome.windows.onFocusChanged.addListener(() => requestReconcile());
 
   requestReconcile();
 }
@@ -300,7 +304,7 @@ function broadcastUpdate() {
   chrome.runtime.sendMessage({ type: "TREE_UPDATED" }).catch(() => {});
 }
 
-export async function reconcileTabs() {
+export async function reconcileTabs(options: ReconcileOptions = {}) {
   let windows = await chrome.windows.getAll({ populate: true });
   if (windows.some(w => !w.tabs)) {
       console.warn("[Outliner] Warning: chrome.windows.getAll returned windows without tabs. Skipping incomplete windows to prevent data loss.");
@@ -446,6 +450,12 @@ export async function reconcileTabs() {
         node.active = false;
         nodesToSave.push(node);
         intentionallySavedNodes.delete(node.id);
+      } else if (options.preserveMissingOpenNodes) {
+        node.status = "saved";
+        node.active = false;
+        delete node.browserTabId;
+        delete node.browserWindowId;
+        nodesToSave.push(node);
       } else {
         nodesToRemove.add(node.id);
       }
@@ -470,6 +480,9 @@ export async function reconcileTabs() {
             nodesToRemove.add(node.id);
           } else {
             node.status = "saved";
+            if (options.preserveMissingOpenNodes) {
+              delete node.browserWindowId;
+            }
             nodesToSave.push(node);
           }
         }
@@ -687,30 +700,38 @@ export async function reconcileTabs() {
 
 let isReconciling = false;
 let pendingReconcile = false;
+let pendingReconcileOptions: ReconcileOptions = {};
 
-async function safeReconcile() {
+async function safeReconcile(options: ReconcileOptions = {}) {
   if (pauseReconcile) return;
   if (isReconciling) {
     pendingReconcile = true;
+    pendingReconcileOptions.preserveMissingOpenNodes ||= options.preserveMissingOpenNodes;
     return;
   }
-  
+
   isReconciling = true;
   try {
-    await reconcileTabs();
+    await reconcileTabs(options);
   } finally {
     isReconciling = false;
     if (pendingReconcile) {
       pendingReconcile = false;
-      safeReconcile();
+      const nextOptions = pendingReconcileOptions;
+      pendingReconcileOptions = {};
+      safeReconcile(nextOptions);
     }
   }
 }
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
-function requestReconcile() {
+let scheduledReconcileOptions: ReconcileOptions = {};
+function requestReconcile(options: ReconcileOptions = {}) {
+  scheduledReconcileOptions.preserveMissingOpenNodes ||= options.preserveMissingOpenNodes;
   if (reconcileTimer) clearTimeout(reconcileTimer);
   reconcileTimer = setTimeout(() => {
-    safeReconcile();
+    const nextOptions = scheduledReconcileOptions;
+    scheduledReconcileOptions = {};
+    safeReconcile(nextOptions);
   }, 250);
 }

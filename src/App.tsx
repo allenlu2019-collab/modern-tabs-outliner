@@ -1102,7 +1102,10 @@ function App() {
                             setShowSnapshots(false);
                             window.dispatchEvent(new CustomEvent('REFRESH_TREE'));
                             if (typeof chrome !== 'undefined' && chrome.runtime) {
-                              chrome.runtime.sendMessage({ type: "FORCE_RECONCILE" }).catch(() => {});
+                              chrome.runtime.sendMessage({
+                                type: "FORCE_RECONCILE",
+                                preserveMissingOpenNodes: true,
+                              }).catch(() => {});
                             }
                           }
                         }}>Restore</button>

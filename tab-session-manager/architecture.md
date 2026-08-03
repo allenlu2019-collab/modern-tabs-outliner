@@ -1,7 +1,7 @@
 # Modern Tabs Outliner Technical Architecture
 
 Status: Current implementation baseline
-Applies to: Version 1.0.16
+Applies to: Version 1.0.17
 
 ## Overview
 
@@ -133,7 +133,7 @@ event received during a run sets a pending flag for one subsequent run.
 | `INTENTIONAL_SAVE` | UI | Preserve a node when its live tab/window disappears |
 | `RESTORE_NODE` | UI | Restore a tab, window, or group branch |
 | `TAB_MOVED_UI` | UI | Move a physical tab to match drag/drop |
-| `FORCE_RECONCILE` | UI | Request reconciliation after import/snapshot restore |
+| `FORCE_RECONCILE` | UI | Request reconciliation, optionally preserving unmatched restored nodes |
 | `TREE_UPDATED` | Background | Tell the UI to reload IndexedDB |
 
 Message handling is fire-and-forget; listeners do not claim an asynchronous
@@ -168,6 +168,11 @@ response channel.
    - Remove child references that disagree with `parentId`.
 10. **Persist and broadcast.** Batch writes, remove marked nodes, then send
     `TREE_UPDATED`.
+
+Snapshot restoration requests a one-shot preserve mode. URL fallback matching
+first reconnects live browser tabs to restored nodes; unmatched restored nodes
+that were previously open become saved and have stale runtime IDs removed.
+Debounced browser events retain this mode until that reconciliation completes.
 
 ### Positional weave
 
